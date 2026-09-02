@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useState } from 'react';
 import {
   AlertCircle,
   CheckCircle2,
@@ -20,43 +20,14 @@ type DiscoveredModel = {
   isFree: boolean;
 };
 
-type ProviderSummary = {
-  slug: string;
-  is_active: boolean;
-  ai_api_keys?: Array<{ id: string; status: string }>;
-};
-
 const GOOGLE_BASE_URL = 'https://generativelanguage.googleapis.com';
 
-export default function GoogleProviderPanel() {
-  const [provider, setProvider] = useState<ProviderSummary | null>(null);
-  const [loadingStatus, setLoadingStatus] = useState(true);
+export default function GoogleProviderPanel({ activeKeyCount }: { activeKeyCount: number }) {
   const [working, setWorking] = useState(false);
   const [importing, setImporting] = useState(false);
   const [models, setModels] = useState<DiscoveredModel[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-
-  const activeKeyCount = provider?.ai_api_keys?.filter((key) => key.status === 'active').length ?? 0;
-  const freeModels = useMemo(() => models.filter((model) => model.isFree), [models]);
-
-  async function loadProviderStatus() {
-    setLoadingStatus(true);
-    try {
-      const response = await fetch('/api/admin/providers', { cache: 'no-store' });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Could not load provider status.');
-      setProvider((data.providers ?? []).find((item: ProviderSummary) => item.slug === 'google') ?? null);
-    } catch (error) {
-      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Could not load provider status.' });
-    } finally {
-      setLoadingStatus(false);
-    }
-  }
-
-  useEffect(() => {
-    void loadProviderStatus();
-  }, []);
 
   async function handleTestAndDiscover() {
     setWorking(true);
@@ -176,7 +147,7 @@ export default function GoogleProviderPanel() {
           <button
             type="button"
             onClick={handleTestAndDiscover}
-            disabled={working || loadingStatus}
+            disabled={working}
             className="inline-flex items-center justify-center gap-2 rounded-xl bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 px-4 py-2.5 text-sm font-medium disabled:opacity-50"
           >
             {working ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
@@ -190,7 +161,7 @@ export default function GoogleProviderPanel() {
               <KeyRound className="w-4 h-4" /> Stored credential
             </div>
             <div className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-              {loadingStatus ? 'Checking…' : activeKeyCount > 0 ? `${activeKeyCount} active encrypted key${activeKeyCount === 1 ? '' : 's'} available.` : 'No active stored key found.'}
+              {activeKeyCount > 0 ? `${activeKeyCount} active encrypted key${activeKeyCount === 1 ? '' : 's'} available.` : 'No active stored key found.'}
             </div>
           </div>
 
