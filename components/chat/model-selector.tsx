@@ -13,6 +13,11 @@ const DEFAULT_MODELS = [
 const SELECTED_MODEL_KEY = 'abhiai_selected_model';
 const MODEL_CHANGED_EVENT = 'abhiai:model-changed';
 
+type ModelSelectorProps = {
+  onModelSelect?: (modelAlias: string) => void;
+  variant?: 'header' | 'dock';
+};
+
 function ModelIcon({ name, className }: { name: string; className?: string }) {
   const n = (name || '').toLowerCase();
   if (n.includes('fast') || n.includes('lite')) return <Zap className={className} />;
@@ -23,7 +28,7 @@ function ModelIcon({ name, className }: { name: string; className?: string }) {
   return <Sparkles className={className} />;
 }
 
-export default function ModelSelector({ onModelSelect }: { onModelSelect?: (modelAlias: string) => void }) {
+export default function ModelSelector({ onModelSelect, variant = 'header' }: ModelSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [models, setModels] = useState<any[]>(DEFAULT_MODELS);
   const [selected, setSelected] = useState<any>(DEFAULT_MODELS[0]);
@@ -65,6 +70,21 @@ export default function ModelSelector({ onModelSelect }: { onModelSelect?: (mode
   }, [selected, onModelSelect]);
 
   useEffect(() => {
+    const handleExternalModelChange = (event: Event) => {
+      const detail = (event as CustomEvent<{ modelId?: string }>).detail;
+      if (!detail?.modelId) return;
+      setSelected((current: any) => {
+        if (current?.id === detail.modelId) return current;
+        return models.find((model: any) => model.id === detail.modelId) || current;
+      });
+      setIsOpen(false);
+    };
+
+    window.addEventListener(MODEL_CHANGED_EVENT, handleExternalModelChange as EventListener);
+    return () => window.removeEventListener(MODEL_CHANGED_EVENT, handleExternalModelChange as EventListener);
+  }, [models]);
+
+  useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsOpen(false);
@@ -93,13 +113,20 @@ export default function ModelSelector({ onModelSelect }: { onModelSelect?: (mode
   };
 
   const activeModel = selected || DEFAULT_MODELS[0];
+  const isDock = variant === 'dock';
 
   return (
-    <div className="relative min-w-0" ref={dropdownRef} data-abhiai-model-selector>
+    <div
+      className={`relative min-w-0 ${isDock ? 'pointer-events-auto' : ''}`}
+      ref={dropdownRef}
+      data-abhiai-model-selector={variant}
+    >
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-900 border border-zinc-200/60 dark:border-zinc-800/60 bg-white/50 dark:bg-zinc-900/50 backdrop-blur-xs transition-colors text-xs sm:text-sm font-medium text-zinc-700 dark:text-zinc-300 max-w-[140px] sm:max-w-none min-w-0"
+        className={isDock
+          ? 'flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-zinc-200/80 dark:border-zinc-700/80 bg-white/92 dark:bg-zinc-900/92 backdrop-blur-xl shadow-md text-xs font-semibold text-zinc-700 dark:text-zinc-200 max-w-[155px] min-w-0 active:scale-[0.98] transition-all'
+          : 'flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-900 border border-zinc-200/60 dark:border-zinc-800/60 bg-white/50 dark:bg-zinc-900/50 backdrop-blur-xs transition-colors text-xs sm:text-sm font-medium text-zinc-700 dark:text-zinc-300 max-w-[140px] sm:max-w-none min-w-0'}
         title={activeModel.name}
       >
         <ModelIcon name={activeModel.name} className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400 shrink-0" />
@@ -110,11 +137,11 @@ export default function ModelSelector({ onModelSelect }: { onModelSelect?: (mode
       <AnimatePresence>
         {isOpen && (
           <motion.div
-            initial={{ opacity: 0, y: -5, scale: 0.98 }}
+            initial={{ opacity: 0, y: isDock ? 6 : -5, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -5, scale: 0.98 }}
+            exit={{ opacity: 0, y: isDock ? 6 : -5, scale: 0.98 }}
             transition={{ duration: 0.14, ease: 'easeOut' }}
-            className="absolute top-full left-0 mt-1.5 w-60 max-w-[calc(100vw-24px)] bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-xl overflow-hidden z-50 p-1.5"
+            className={`${isDock ? 'absolute bottom-full left-0 mb-2' : 'absolute top-full left-0 mt-1.5'} w-60 max-w-[calc(100vw-24px)] bg-white/96 dark:bg-zinc-900/96 backdrop-blur-xl border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-xl overflow-hidden z-[120] p-1.5`}
           >
             <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-400">
               AbhiAI Models
