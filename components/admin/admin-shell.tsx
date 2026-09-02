@@ -1,18 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { usePathname } from 'next/navigation';
 import { Menu, X } from 'lucide-react';
 import AdminSidebar from '@/components/admin/admin-sidebar';
 import { AbhiLogo } from '@/components/brand/logo';
 
 export default function AdminShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const pathname = usePathname();
-
-  useEffect(() => {
-    setMobileOpen(false);
-  }, [pathname]);
 
   useEffect(() => {
     if (!mobileOpen) return;
