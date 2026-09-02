@@ -1,6 +1,5 @@
-import { getConnections, AIConnection } from '@/lib/connections';
-import { isModelAllowedUnderFreeGuard } from '@/lib/ai/free-guard';
-import { getProviderAdapter } from '@/lib/ai/providers/registry';
+import type { AIConnection } from '@/lib/connections';
+import { listRuntimeConnections } from '@/lib/data/ai-config';
 
 export interface RouteCandidate {
   connectionId: string;
@@ -18,57 +17,71 @@ export interface SmartRoutePlan {
   fallbacks: RouteCandidate[];
 }
 
+function toCandidate(connection: AIConnection, isPrimary = false): RouteCandidate {
+  return {
+    connectionId: connection.id,
+    name: connection.name,
+    providerId: connection.providerId || guessProviderId(connection.baseUrl, connection.modelId),
+    baseUrl: connection.baseUrl,
+    apiKey: connection.apiKey,
+    modelId: connection.modelId,
+    systemPrompt: connection.systemPrompt || '',
+    isPrimary,
+  };
+}
+
 /**
- * Resolves the primary connection and ordered fallback models for any requested alias/ID.
+ * Resolves the primary connection and ordered fallback models from the
+ * current Supabase provider/model configuration. Runtime secrets are
+ * decrypted server-side and never returned to the browser.
  */
-export function resolveRoutePlan(requestedModelOrAlias: string, requiresVision: boolean = false): SmartRoutePlan {
-  const connections = getConnections();
-  const allConnections = Object.values(connections).filter(c => c.isActive);
+export async function resolveRoutePlan(
+  requestedModelOrAlias: string,
+  requiresVision: boolean = false,
+): Promise<SmartRoutePlan> {
+  const runtimeConnections = await listRuntimeConnections();
+  const allConnections = runtimeConnections.filter((connection) => connection.isActive && connection.apiKey);
 
   if (allConnections.length === 0) {
     return { primary: null, fallbacks: [] };
   }
 
-  // 1. Try to find the exact or alias-matched connection as Primary
-  let primaryConn: AIConnection | undefined = connections[requestedModelOrAlias];
-  if (!primaryConn) {
-    primaryConn = allConnections.find(
-      c => c.assignedAlias === requestedModelOrAlias || c.name === requestedModelOrAlias || c.modelId === requestedModelOrAlias
-    );
+  let primaryConn = allConnections.find(
+    (connection) =>
+      connection.id === requestedModelOrAlias ||
+      connection.assignedAlias === requestedModelOrAlias ||
+      connection.name === requestedModelOrAlias ||
+      connection.modelId === requestedModelOrAlias,
+  );
+
+  // For the generic/default chat path, prefer the newest verified Gemini Flash model.
+  if (!primaryConn && (requestedModelOrAlias === 'default' || !requestedModelOrAlias)) {
+    primaryConn =
+      allConnections.find((connection) => connection.modelId === 'gemini-3.7-flash') ||
+      allConnections.find((connection) => connection.modelId === 'gemini-3.6-flash') ||
+      allConnections.find((connection) => connection.modelId === 'gemini-3.5-flash-lite') ||
+      allConnections[0];
   }
 
-  // If still not found, fallback to first available active connection
   if (!primaryConn) {
     primaryConn = allConnections[0];
   }
 
-  // 2. Build list of compatible fallbacks
-  const fallbacks: RouteCandidate[] = allConnections
-    .filter(c => c.id !== primaryConn?.id)
-    .map(c => ({
-      connectionId: c.id,
-      name: c.name,
-      providerId: guessProviderId(c.baseUrl, c.modelId),
-      baseUrl: c.baseUrl,
-      apiKey: c.apiKey,
-      modelId: c.modelId,
-      systemPrompt: c.systemPrompt || '',
-    }));
+  // Vision capability filtering is intentionally conservative for now: imported
+  // Gemini Flash models remain eligible while model capability persistence is
+  // completed in the next phase.
+  const compatibleConnections = requiresVision
+    ? allConnections.filter((connection) => connection.providerId === 'google')
+    : allConnections;
 
-  const primaryCandidate: RouteCandidate = {
-    connectionId: primaryConn.id,
-    name: primaryConn.name,
-    providerId: guessProviderId(primaryConn.baseUrl, primaryConn.modelId),
-    baseUrl: primaryConn.baseUrl,
-    apiKey: primaryConn.apiKey,
-    modelId: primaryConn.modelId,
-    systemPrompt: primaryConn.systemPrompt || '',
-    isPrimary: true,
-  };
+  const fallbacks = compatibleConnections
+    .filter((connection) => connection.id !== primaryConn?.id)
+    .slice(0, 3)
+    .map((connection) => toCandidate(connection));
 
   return {
-    primary: primaryCandidate,
-    fallbacks: fallbacks.slice(0, 3), // Max 3 fallback hops to avoid loops
+    primary: toCandidate(primaryConn, true),
+    fallbacks,
   };
 }
 
