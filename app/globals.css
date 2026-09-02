@@ -1,2 +1,7 @@
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
+
+/* Public chat should use the available viewport instead of a narrow document column. */
+.h-screen > .md\:ml-72 .max-w-3xl {
+  max-width: 100%;
+}
