@@ -3,6 +3,7 @@ import { getInstructions } from "@/lib/instructions";
 import { resolveRoutePlan, RouteCandidate } from "@/lib/ai/router";
 import { streamOpenAICompatible } from "@/lib/ai/stream";
 import { logUsageEvent } from "@/lib/usage-logger";
+import { recordRuntimeModelFailure, recordRuntimeModelSuccess } from "@/lib/ai/runtime-health";
 import { fetchWebGroundingContext, type SearchResult } from "@/lib/ai/web-search";
 import {
   formatDocumentsForPrompt,
@@ -241,6 +242,7 @@ export async function POST(req: NextRequest) {
               }
             }
 
+            await recordRuntimeModelSuccess(candidate.connectionId);
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`));
             executionSucceeded = true;
 
@@ -260,6 +262,7 @@ export async function POST(req: NextRequest) {
 
             break;
           } catch (err: any) {
+            await recordRuntimeModelFailure(candidate.connectionId, err);
             console.warn(`[Stream Failover] Error on ${candidate.name} (${candidate.modelId}):`, err.message);
           }
         }
