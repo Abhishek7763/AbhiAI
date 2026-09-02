@@ -1,0 +1,189 @@
+/* AbhiAI mobile app polish layer.
+   Loaded after globals.css so it can safely refine the public chat without
+   disturbing the desktop/admin layouts. */
+
+@media (max-width: 767px) {
+  /* Reserve a real app-bar slot even when mobile browser chrome resizes. */
+  .h-screen.bg-transparent.overflow-hidden > .md\:ml-72 {
+    box-sizing: border-box;
+    padding-top: 3.6rem;
+    position: relative;
+  }
+
+  /* Persistent mobile app bar: menu + AbhiAI brand remain visible in long chats. */
+  .h-screen > .md\:ml-72 > header {
+    position: absolute !important;
+    inset: 0 0 auto 0 !important;
+    top: 0 !important;
+    height: 3.6rem !important;
+    min-height: 3.6rem !important;
+    z-index: 80 !important;
+    padding: 0 0.65rem !important;
+    border-bottom: 1px solid rgb(228 228 231 / 0.68) !important;
+    background: rgb(255 255 255 / 0.82) !important;
+    -webkit-backdrop-filter: blur(18px) saturate(1.25);
+    backdrop-filter: blur(18px) saturate(1.25);
+    box-shadow: 0 1px 0 rgb(24 24 27 / 0.025);
+  }
+
+  .dark .h-screen > .md\:ml-72 > header {
+    border-bottom-color: rgb(39 39 42 / 0.72) !important;
+    background: rgb(9 9 11 / 0.82) !important;
+  }
+
+  .h-screen > .md\:ml-72 > header > div:first-child {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    gap: 0.45rem !important;
+  }
+
+  .h-screen > .md\:ml-72 > header > div:last-child {
+    flex: 0 0 auto !important;
+    gap: 0.25rem !important;
+  }
+
+  .h-screen > .md\:ml-72 > header > div:first-child > button[aria-label="Open Navigation"] {
+    width: 2.25rem !important;
+    height: 2.25rem !important;
+    flex: 0 0 2.25rem !important;
+    margin-left: -0.2rem !important;
+    padding: 0 !important;
+  }
+
+  /* Make the mobile wordmark feel intentional rather than like a tiny icon. */
+  .h-screen > .md\:ml-72 > header > div:first-child > div.md\:hidden.flex.items-center::after {
+    content: "AbhiAI" !important;
+    margin-left: 0.38rem !important;
+    color: rgb(24 24 27) !important;
+    font-size: 0.9rem !important;
+    line-height: 1 !important;
+    font-weight: 760 !important;
+    letter-spacing: -0.025em !important;
+    white-space: nowrap !important;
+  }
+
+  .dark .h-screen > .md\:ml-72 > header > div:first-child > div.md\:hidden.flex.items-center::after {
+    color: rgb(250 250 250) !important;
+  }
+
+  /* The model picker moves from the crowded header to the composer toolbar. */
+  [data-abhiai-model-selector] {
+    position: fixed !important;
+    left: 0.7rem !important;
+    bottom: calc(max(0.3rem, env(safe-area-inset-bottom)) + 2.95rem) !important;
+    z-index: 75 !important;
+    width: auto !important;
+    max-width: 9.4rem !important;
+  }
+
+  [data-abhiai-model-selector] > button {
+    min-height: 1.72rem !important;
+    max-width: 9.4rem !important;
+    padding: 0.28rem 0.65rem !important;
+    gap: 0.38rem !important;
+    border: 0 !important;
+    border-radius: 9999px !important;
+    background: rgb(244 244 245 / 0.94) !important;
+    color: rgb(63 63 70) !important;
+    box-shadow: inset 0 0 0 1px rgb(228 228 231 / 0.75), 0 2px 8px rgb(24 24 27 / 0.04) !important;
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    font-size: 0.72rem !important;
+    font-weight: 650 !important;
+  }
+
+  .dark [data-abhiai-model-selector] > button {
+    background: rgb(39 39 42 / 0.94) !important;
+    color: rgb(228 228 231) !important;
+    box-shadow: inset 0 0 0 1px rgb(63 63 70 / 0.8), 0 4px 14px rgb(0 0 0 / 0.2) !important;
+  }
+
+  [data-abhiai-model-selector] > div[class*="absolute"] {
+    top: auto !important;
+    bottom: calc(100% + 0.45rem) !important;
+    left: 0 !important;
+    margin-top: 0 !important;
+    width: min(15rem, calc(100vw - 1.4rem)) !important;
+    max-height: min(22rem, 55dvh) !important;
+    overflow-y: auto !important;
+    transform-origin: bottom left !important;
+  }
+
+  /* The top toolbar now only reserves the right side for Web Search/listening. */
+  .chat-composer-shell > div > div:first-child {
+    min-height: 1.75rem !important;
+    justify-content: flex-end !important;
+    padding-left: 9.7rem !important;
+    padding-right: 0.1rem !important;
+    overflow: visible !important;
+  }
+
+  .chat-composer-shell > div > div:first-child > button {
+    min-height: 1.7rem !important;
+    padding: 0.25rem 0.6rem !important;
+    border-radius: 9999px !important;
+    font-size: 0.7rem !important;
+    white-space: nowrap !important;
+  }
+
+  /* Keep the composer at the visual bottom, like Claude/Perplexity mobile. */
+  .chat-composer-shell {
+    position: relative !important;
+    z-index: 60 !important;
+    padding: 0.22rem 0.55rem max(0.2rem, env(safe-area-inset-bottom)) !important;
+    background: linear-gradient(to top, rgb(255 255 255 / 0.98) 48%, rgb(255 255 255 / 0.88) 72%, transparent) !important;
+  }
+
+  .dark .chat-composer-shell {
+    background: linear-gradient(to top, rgb(9 9 11 / 0.98) 48%, rgb(9 9 11 / 0.9) 72%, transparent) !important;
+  }
+
+  .chat-composer-shell form {
+    min-height: 2.72rem !important;
+    padding: 0.25rem 0.28rem !important;
+    border-radius: 1.45rem !important;
+    background: rgb(255 255 255 / 0.94) !important;
+    box-shadow: 0 5px 20px rgb(24 24 27 / 0.07) !important;
+  }
+
+  .dark .chat-composer-shell form {
+    background: rgb(24 24 27 / 0.94) !important;
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.24) !important;
+  }
+
+  .chat-composer-shell textarea {
+    min-height: 2.15rem !important;
+    max-height: 7rem !important;
+    padding: 0.42rem 0.42rem !important;
+    font-size: 0.92rem !important;
+    line-height: 1.3rem !important;
+  }
+
+  .chat-composer-shell form > div:last-child > button {
+    width: 2.1rem !important;
+    height: 2.1rem !important;
+    margin-bottom: 0.05rem !important;
+  }
+
+  /* The warning still exists on desktop; hide it on phones to reclaim vertical space. */
+  .chat-composer-shell > div > p:last-child {
+    display: none !important;
+  }
+
+  /* Account for the shorter composer when showing the jump-to-latest control. */
+  .h-screen > .md\:ml-72 > button[title="Jump to latest message"] {
+    bottom: 5.15rem !important;
+  }
+
+  /* Header model picker no longer occupies layout width after it moves to bottom. */
+  .h-screen > .md\:ml-72 > header [data-abhiai-model-selector] {
+    flex: 0 0 auto !important;
+  }
+
+  /* On very narrow screens keep secondary header actions out of the way. */
+  @media (max-width: 390px) {
+    .h-screen > .md\:ml-72 > header > div:last-child > button[title="Select Agent"] {
+      display: none !important;
+    }
+  }
+}
