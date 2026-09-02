@@ -151,9 +151,11 @@ export function AddProviderWizard({ onSuccess, onCancel }: AddProviderWizardProp
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             name: `${selectedTemplate.name} - ${modelInfo.name || modelId}`,
+            providerId: selectedTemplate.id,
+            providerName: selectedTemplate.name,
             scope,
             baseUrl: customBaseUrl || selectedTemplate.baseUrl,
-            apiKey,
+            apiKey: '',
             modelId,
             systemPrompt: 'You are AbhiAI, a helpful and precise assistant.',
             isActive: true,

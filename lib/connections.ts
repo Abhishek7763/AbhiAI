@@ -8,6 +8,10 @@ export interface AIConnection {
   name: string; // Internal name e.g. 'Google Gemini 2.5 Flash'
   baseUrl: string;
   apiKey: string;
+  hasApiKey?: boolean;
+  maskedApiKey?: string;
+  apiKeyCount?: number;
+  providerId?: string;
   modelId: string;
   systemPrompt: string;
   isActive: boolean;

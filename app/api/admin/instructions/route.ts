@@ -1,21 +1,19 @@
 import { NextResponse } from 'next/server';
-import { getInstructions, saveInstructions } from '@/lib/instructions';
-import { FILE_STORE_UNAVAILABLE_MESSAGE } from '@/lib/config/file-store';
+import { getStoredInstructions, saveStoredInstructions } from '@/lib/data/admin-config';
 
 export async function GET() {
-  return NextResponse.json(getInstructions());
+  try {
+    return NextResponse.json(await getStoredInstructions());
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Failed to load instructions' }, { status: 503 });
+  }
 }
 
 export async function POST(req: Request) {
   try {
     const data = await req.json();
-    const success = saveInstructions({ systemPrompt: data.systemPrompt });
-    
-    if (success) {
-      return NextResponse.json({ success: true });
-    } else {
-      return NextResponse.json({ error: FILE_STORE_UNAVAILABLE_MESSAGE }, { status: 503 });
-    }
+    await saveStoredInstructions(data.systemPrompt);
+    return NextResponse.json({ success: true });
   } catch (error) {
     return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
   }

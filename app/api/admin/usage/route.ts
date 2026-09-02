@@ -1,8 +1,13 @@
 import { NextResponse } from 'next/server';
-import { getUsageLogs } from '@/lib/usage-logger';
+import { getStoredUsageLogs } from '@/lib/data/admin-config';
 
 export async function GET() {
-  const logs = getUsageLogs();
+  let logs;
+  try {
+    logs = await getStoredUsageLogs();
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Failed to load usage' }, { status: 503 });
+  }
 
   // Aggregate stats
   const totalRequests = logs.length;

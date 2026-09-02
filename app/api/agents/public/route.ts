@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
-import { getAgents } from '@/lib/agents';
+import { getStoredAgents } from '@/lib/data/admin-config';
 
 export async function GET() {
-  const agents = getAgents();
-  const publicAgents = agents
+  try {
+    const publicAgents = (await getStoredAgents())
     .filter(a => a.visibility === 'public')
     .map(a => ({
       id: a.id,
@@ -14,5 +14,8 @@ export async function GET() {
       preferredModelOrAlias: a.preferredModelOrAlias,
     }));
 
-  return NextResponse.json({ agents: publicAgents });
+    return NextResponse.json({ agents: publicAgents });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Failed to load agents' }, { status: 503 });
+  }
 }

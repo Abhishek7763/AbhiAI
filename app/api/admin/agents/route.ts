@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAgents, saveAgents, AIAgent } from '@/lib/agents';
-import { FILE_STORE_UNAVAILABLE_MESSAGE } from '@/lib/config/file-store';
+import type { AIAgent } from '@/lib/agents';
+import { getStoredAgents, saveStoredAgents } from '@/lib/data/admin-config';
 
 export async function GET() {
-  const agents = getAgents();
-  return NextResponse.json({ agents });
+  try {
+    return NextResponse.json({ agents: await getStoredAgents() });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Failed to load agents' }, { status: 503 });
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -14,12 +17,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Expected agents array' }, { status: 400 });
     }
 
-    if (!saveAgents(body.agents as AIAgent[])) {
-      return NextResponse.json(
-        { error: FILE_STORE_UNAVAILABLE_MESSAGE },
-        { status: 503 },
-      );
-    }
+    await saveStoredAgents(body.agents as AIAgent[]);
     return NextResponse.json({ success: true, agents: body.agents });
   } catch (e: any) {
     console.error('Error saving agents:', e);

@@ -12,9 +12,9 @@ A modern, premium, mobile-first AI platform.
 ## Development Phases
 The project is built in structured phases to ensure stability, security, and quality.
 
-- **Phase 0:** Project Foundation (Current)
-- **Phase 1:** Public UI
-- **Phase 2:** Supabase Foundation
+- **Phase 0:** Project audit and safe Preview workflow (complete)
+- **Phase 1:** Build stability and filesystem safety (complete)
+- **Phase 2:** Supabase persistence and encrypted provider keys (in progress)
 - *(See master build plan for subsequent phases)*
 
 ## Structure

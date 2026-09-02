@@ -1,66 +1,29 @@
 import { NextResponse } from 'next/server';
-import { getProviders, saveProviders, ProviderConfig } from '@/lib/providers';
-import { FILE_STORE_UNAVAILABLE_MESSAGE } from '@/lib/config/file-store';
+import { listProviders, upsertProvider } from '@/lib/data/ai-config';
+import { PROVIDER_TEMPLATES } from '@/lib/ai/providers/registry';
 
 export async function GET() {
-  const providers = getProviders();
-  // Don't send full API keys back to the client for security, just mask them or send existence
-  const maskedProviders: Record<string, any> = {};
-  
-  for (const [key, value] of Object.entries(providers)) {
-    maskedProviders[key] = {
-      id: value.id,
-      hasKey: !!value.apiKey,
-      isActive: value.isActive
-    };
+  try {
+    return NextResponse.json({ providers: await listProviders() });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Failed to load providers' }, { status: 503 });
   }
-  
-  return NextResponse.json({ providers: maskedProviders });
 }
 
 export async function POST(req: Request) {
   try {
     const data = await req.json();
-    const currentProviders = getProviders();
-    
-    const newProviders: Record<string, ProviderConfig> = { ...currentProviders };
-    
-    // Update with new data
-    for (const [providerId, config] of Object.entries(data)) {
-      const c = config as any;
-      
-      if (!newProviders[providerId]) {
-        newProviders[providerId] = { id: providerId, apiKey: '', isActive: false };
-      }
-      
-      // Only update API key if one was provided (don't overwrite with empty if they just want to set active)
-      if (c.apiKey) {
-        newProviders[providerId].apiKey = c.apiKey;
-      }
-      
-      if (c.isActive !== undefined) {
-        newProviders[providerId].isActive = c.isActive;
-      }
-    }
-    
-    // If one is set to active, unset others
-    const activeProvider = Object.entries(data).find(([_, config]: [string, any]) => config.isActive);
-    if (activeProvider) {
-      for (const key of Object.keys(newProviders)) {
-        if (key !== activeProvider[0]) {
-          newProviders[key].isActive = false;
-        }
-      }
-    }
-    
-    const success = saveProviders(newProviders);
-    
-    if (success) {
-      return NextResponse.json({ success: true });
-    } else {
-      return NextResponse.json({ error: FILE_STORE_UNAVAILABLE_MESSAGE }, { status: 503 });
-    }
+    const template = PROVIDER_TEMPLATES.find((item) => item.id === data.id);
+    const provider = await upsertProvider({
+      slug: data.id,
+      name: data.name || template?.name || data.id,
+      baseUrl: data.baseUrl ?? template?.baseUrl ?? '',
+      isActive: data.isActive,
+      apiKey: data.apiKey,
+      keyLabel: data.keyLabel,
+    });
+    return NextResponse.json({ success: true, provider });
   } catch (error) {
-    return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Invalid request' }, { status: 400 });
   }
 }

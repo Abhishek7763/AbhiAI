@@ -1,17 +1,17 @@
 import { NextResponse } from 'next/server';
-import { getConnections } from '@/lib/connections';
+import { getStoredModels } from '@/lib/data/admin-config';
 
 export async function GET() {
-  const connections = getConnections();
-  
-  // Filter active and public connections, and only return safe data
-  const publicModels = Object.values(connections)
-    .filter(c => c.isActive && c.scope === 'public')
-    .map(c => ({
-      id: c.id,
-      name: c.assignedAlias || c.name,
-      originalName: c.name
+  try {
+    const publicModels = (await getStoredModels())
+      .filter((model) => model.isActive && model.isPublic)
+      .map((model) => ({
+      id: model.id,
+      name: model.alias || model.name,
+      originalName: model.name,
     }));
-    
-  return NextResponse.json({ models: publicModels });
+    return NextResponse.json({ models: publicModels });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Failed to load models' }, { status: 503 });
+  }
 }

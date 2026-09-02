@@ -40,7 +40,7 @@ export default function ConnectionsPage() {
   }, []);
 
   const handleSave = async () => {
-    if (!editingConnection?.name || !editingConnection?.apiKey || !editingConnection?.modelId) {
+    if (!editingConnection?.name || (!editingConnection?.apiKey && !editingConnection?.hasApiKey) || !editingConnection?.modelId) {
       alert('Name, API Key, and Model ID are required');
       return;
     }
@@ -299,11 +299,16 @@ export default function ConnectionsPage() {
                     type="password" 
                     value={editingConnection?.apiKey || ''}
                     onChange={e => setEditingConnection({...editingConnection, apiKey: e.target.value})}
-                    placeholder="nvapi-..."
+                    placeholder={editingConnection?.maskedApiKey || 'nvapi-...'}
                     className="w-full px-3 py-2 pl-9 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg text-sm focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-100 outline-none"
                   />
                   <Key className="w-4 h-4 text-zinc-400 absolute left-3 top-2.5" />
                 </div>
+                {editingConnection?.hasApiKey && (
+                  <p className="text-xs text-zinc-500 mt-1">
+                    {editingConnection.apiKeyCount || 1} encrypted key(s) saved. Leave blank to keep them unchanged.
+                  </p>
+                )}
               </div>
 
               <div>
