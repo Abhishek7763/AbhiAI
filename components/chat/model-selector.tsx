@@ -10,6 +10,9 @@ const DEFAULT_MODELS = [
   { id: 'gemini-3.1-flash-lite', name: 'AbhiAI Lite' },
 ];
 
+const SELECTED_MODEL_KEY = 'abhiai_selected_model';
+const MODEL_CHANGED_EVENT = 'abhiai:model-changed';
+
 function ModelIcon({ name, className }: { name: string; className?: string }) {
   const n = (name || '').toLowerCase();
   if (n.includes('fast') || n.includes('lite')) return <Zap className={className} />;
@@ -29,13 +32,24 @@ export default function ModelSelector({ onModelSelect }: { onModelSelect?: (mode
   useEffect(() => {
     async function loadModels() {
       try {
+        const storedModelId = typeof window !== 'undefined' ? localStorage.getItem(SELECTED_MODEL_KEY) : null;
         const res = await fetch('/api/models/public');
         if (res.ok) {
           const data = await res.json();
           if (data.models && Array.isArray(data.models) && data.models.length > 0) {
             setModels(data.models);
-            setSelected((current: any) => data.models.find((model: any) => model.id === current?.id) || data.models[0]);
+            setSelected((current: any) =>
+              data.models.find((model: any) => model.id === storedModelId) ||
+              data.models.find((model: any) => model.id === current?.id) ||
+              data.models[0]
+            );
+            return;
           }
+        }
+
+        if (storedModelId) {
+          const storedDefault = DEFAULT_MODELS.find((model) => model.id === storedModelId);
+          if (storedDefault) setSelected(storedDefault);
         }
       } catch (e) {
         console.error('Failed to load models, using branded defaults', e);
@@ -61,22 +75,36 @@ export default function ModelSelector({ onModelSelect }: { onModelSelect?: (mode
   }, []);
 
   const handleSelect = (model: any) => {
-    setSelected(model);
+    const modelChanged = model.id !== selected?.id;
     setIsOpen(false);
+    if (!modelChanged) return;
+
+    setSelected(model);
+
+    try {
+      localStorage.setItem(SELECTED_MODEL_KEY, model.id);
+    } catch {
+      // The selector still works even if browser storage is unavailable.
+    }
+
+    window.dispatchEvent(new CustomEvent(MODEL_CHANGED_EVENT, {
+      detail: { modelId: model.id, modelName: model.name },
+    }));
   };
 
   const activeModel = selected || DEFAULT_MODELS[0];
 
   return (
-    <div className="relative" ref={dropdownRef}>
+    <div className="relative min-w-0" ref={dropdownRef}>
       <button
+        type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-900 border border-zinc-200/60 dark:border-zinc-800/60 bg-white/50 dark:bg-zinc-900/50 backdrop-blur-xs transition-colors text-xs sm:text-sm font-medium text-zinc-700 dark:text-zinc-300 max-w-[140px] sm:max-w-none"
+        className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-900 border border-zinc-200/60 dark:border-zinc-800/60 bg-white/50 dark:bg-zinc-900/50 backdrop-blur-xs transition-colors text-xs sm:text-sm font-medium text-zinc-700 dark:text-zinc-300 max-w-[140px] sm:max-w-none min-w-0"
         title={activeModel.name}
       >
         <ModelIcon name={activeModel.name} className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400 shrink-0" />
         <span className="truncate">{activeModel.name}</span>
-        <ChevronDown className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+        <ChevronDown className={`w-3.5 h-3.5 text-zinc-400 shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       <AnimatePresence>
@@ -86,15 +114,19 @@ export default function ModelSelector({ onModelSelect }: { onModelSelect?: (mode
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -5, scale: 0.98 }}
             transition={{ duration: 0.14, ease: 'easeOut' }}
-            className="absolute top-full left-0 mt-1.5 w-60 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-xl overflow-hidden z-50 p-1.5"
+            className="absolute top-full left-0 mt-1.5 w-60 max-w-[calc(100vw-24px)] bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-xl overflow-hidden z-50 p-1.5"
           >
             <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-400">
               AbhiAI Models
+            </div>
+            <div className="px-3 pb-1.5 text-[10px] text-zinc-400 dark:text-zinc-500">
+              Switching model starts a new chat
             </div>
             {models.map((model) => {
               const isCurr = activeModel.id === model.id;
               return (
                 <button
+                  type="button"
                   key={model.id}
                   onClick={() => handleSelect(model)}
                   className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-colors ${
