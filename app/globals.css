@@ -10,6 +10,15 @@ body {
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+/* Keep the conversation canvas clean and distraction-free. */
+.h-screen.bg-transparent.overflow-hidden {
+  background: rgb(255 255 255);
+}
+
+.dark .h-screen.bg-transparent.overflow-hidden {
+  background: rgb(9 9 11);
+}
+
 /* Public chat uses the available viewport instead of a narrow document column. */
 .h-screen > .md\:ml-72 .max-w-3xl {
   max-width: 100%;
