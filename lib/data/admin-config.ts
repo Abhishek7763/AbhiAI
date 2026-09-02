@@ -122,10 +122,11 @@ export async function getStoredModels(): Promise<AIModelConfig[]> {
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from('ai_models')
-    .select('model_id, name, alias, capabilities, is_active, is_public, is_free, ai_providers(slug)')
+    .select('id, model_id, name, alias, capabilities, is_active, is_public, is_free, ai_providers(slug)')
     .order('priority');
   throwIfError(error);
   return (data ?? []).map((row: any) => ({
+    recordId: row.id,
     id: row.model_id,
     providerId: row.ai_providers?.slug ?? '',
     name: row.name,
@@ -137,15 +138,22 @@ export async function getStoredModels(): Promise<AIModelConfig[]> {
   }));
 }
 
-export async function updateStoredModel(id: string, updates: Partial<Pick<AIModelConfig, 'alias' | 'isActive' | 'isPublic'>>) {
+export async function updateStoredModel(recordId: string, updates: Partial<Pick<AIModelConfig, 'alias' | 'isActive' | 'isPublic'>>) {
+  if (!recordId?.trim()) return null;
+
   const values: Record<string, unknown> = {};
   if (updates.alias !== undefined) values.alias = updates.alias;
   if (updates.isActive !== undefined) values.is_active = updates.isActive;
   if (updates.isPublic !== undefined) values.is_public = updates.isPublic;
+
+  if (Object.keys(values).length === 0) {
+    return (await getStoredModels()).find((model) => model.recordId === recordId) ?? null;
+  }
+
   const supabase = createAdminClient();
-  const { error } = await supabase.from('ai_models').update(values).eq('model_id', id);
+  const { error } = await supabase.from('ai_models').update(values).eq('id', recordId);
   throwIfError(error);
-  return (await getStoredModels()).find((model) => model.id === id) ?? null;
+  return (await getStoredModels()).find((model) => model.recordId === recordId) ?? null;
 }
 
 export async function getStoredUsageLogs(): Promise<UsageEntry[]> {

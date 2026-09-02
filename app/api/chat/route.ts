@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getInstructions } from "@/lib/instructions";
+import { getRuntimeInstructions } from "@/lib/ai/runtime-instructions";
 import { resolveRoutePlan, RouteCandidate } from "@/lib/ai/router";
 import { getProviderAdapter } from "@/lib/ai/providers/registry";
 import { logUsageEvent } from "@/lib/usage-logger";
@@ -69,7 +69,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const globalInstructions = getInstructions().systemPrompt || 'You are AbhiAI, an intelligent assistant created by Abhishek.';
+    const globalInstructions = await getRuntimeInstructions();
     const executionChain: RouteCandidate[] = [routePlan.primary, ...routePlan.fallbacks];
 
     let successfulReply: string | null = null;

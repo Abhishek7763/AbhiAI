@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { getInstructions } from "@/lib/instructions";
+import { getRuntimeInstructions } from "@/lib/ai/runtime-instructions";
 import { resolveRoutePlan, RouteCandidate } from "@/lib/ai/router";
 import { streamOpenAICompatible } from "@/lib/ai/stream";
 import { logUsageEvent } from "@/lib/usage-logger";
@@ -121,7 +121,7 @@ export async function POST(req: NextRequest) {
       fallbackWebSources = searchRes.sources || [];
     }
 
-    const globalInstructions = getInstructions().systemPrompt || 'You are AbhiAI, an intelligent assistant created by Abhishek.';
+    const globalInstructions = await getRuntimeInstructions();
     const encoder = new TextEncoder();
     let streamCancelled = false;
 
