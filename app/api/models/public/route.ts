@@ -1,15 +1,21 @@
 import { NextResponse } from 'next/server';
+import { classifyModelBilling } from '@/lib/ai/free-guard';
 import { getStoredModels } from '@/lib/data/admin-config';
 
 export async function GET() {
   try {
     const publicModels = (await getStoredModels())
-      .filter((model) => model.isActive && model.isPublic)
+      .filter((model) => {
+        if (!model.isActive || !model.isPublic) return false;
+        const billing = classifyModelBilling(model.providerId, model.id);
+        return billing === 'FREE_VERIFIED' || billing === 'FREE_LIMITED';
+      })
       .map((model) => ({
-      id: model.id,
-      name: model.alias || model.name,
-      originalName: model.name,
-    }));
+        id: model.id,
+        name: model.alias || model.name,
+        originalName: model.name,
+      }));
+
     return NextResponse.json({ models: publicModels });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Failed to load models' }, { status: 503 });
