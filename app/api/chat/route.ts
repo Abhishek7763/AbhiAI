@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { getInstructions } from "@/lib/instructions";
 import { resolveRoutePlan, RouteCandidate } from "@/lib/ai/router";
 import { getProviderAdapter } from "@/lib/ai/providers/registry";
-import { isModelAllowedUnderFreeGuard } from "@/lib/ai/free-guard";
 import { formatDocumentsForPrompt } from "@/lib/files/document-extractor";
 
 export async function POST(req: Request) {
@@ -14,11 +13,11 @@ export async function POST(req: Request) {
     }
 
     const hasImages = Array.isArray(attachments) && attachments.some((a: any) => a.type?.startsWith('image/'));
-    const routePlan = resolveRoutePlan(modelId || 'default', hasImages);
+    const routePlan = await resolveRoutePlan(modelId || 'default', hasImages);
 
     if (!routePlan.primary) {
       return NextResponse.json(
-        { error: "No active AI providers configured. Please add a provider in Admin Connections." },
+        { error: "No usable AI model is configured. Open Admin > Providers and run Test & Discover." },
         { status: 503 }
       );
     }
@@ -27,7 +26,6 @@ export async function POST(req: Request) {
     const documentTextAppendix = formatDocumentsForPrompt(attachments);
     const userEffectiveContent = (message || 'Please review the attached content.') + documentTextAppendix;
 
-    // Ordered sequence: Primary -> Fallback 1 -> Fallback 2 -> Fallback 3
     const executionChain: RouteCandidate[] = [
       routePlan.primary,
       ...routePlan.fallbacks
@@ -39,17 +37,11 @@ export async function POST(req: Request) {
 
     for (const candidate of executionChain) {
       try {
-        // 1. Free-Only Safety Check
-        const freeCheck = isModelAllowedUnderFreeGuard(candidate.providerId, candidate.modelId, false);
-        // (Free check can be switched to true if Free-Only mode is enforced globally)
-
-        // 2. Prepare System Prompt
         const combinedPrompt = [
           globalInstructions,
           candidate.systemPrompt
         ].filter(Boolean).join('\n\n');
 
-        // 3. Prepare Chat Messages
         const chatMessages: any[] = [];
         if (Array.isArray(history)) {
           for (const h of history) {
@@ -66,10 +58,13 @@ export async function POST(req: Request) {
           attachments,
         });
 
-        // 4. Execute via Provider Adapter
         const adapter = getProviderAdapter(candidate.providerId, candidate.baseUrl);
         if (!adapter) {
           throw new Error(`Adapter for provider ${candidate.providerId} could not be resolved`);
+        }
+
+        if (!candidate.apiKey) {
+          throw new Error(`No runtime API key is available for ${candidate.name}`);
         }
 
         const reply = await adapter.chat(
@@ -82,12 +77,11 @@ export async function POST(req: Request) {
         if (reply) {
           successfulReply = reply;
           executedModelName = candidate.name;
-          break; // Succeeded! Break out of fallback chain.
+          break;
         }
       } catch (err: any) {
         console.warn(`[Failover] Execution failed on ${candidate.name} (${candidate.modelId}):`, err.message);
         lastError = err.message;
-        // Continue loop to attempt next fallback in sequence
       }
     }
 
@@ -99,7 +93,6 @@ export async function POST(req: Request) {
       });
     }
 
-    // Friendly AbhiAI error message if all candidates failed
     return NextResponse.json({
       error: "AbhiAI is temporarily unable to complete this request. Please try again shortly.",
       debug: lastError
