@@ -1,189 +1,302 @@
-/* AbhiAI mobile app polish layer.
-   Loaded after globals.css so it can safely refine the public chat without
-   disturbing the desktop/admin layouts. */
+/* AbhiAI mobile-only chat chrome.
+   This layer is intentionally explicit: the desktop header stays untouched,
+   while phones use dedicated fixed branding and a bottom model dock. */
 
 @media (max-width: 767px) {
-  /* Reserve a real app-bar slot even when mobile browser chrome resizes. */
-  .h-screen.bg-transparent.overflow-hidden > .md\:ml-72 {
-    box-sizing: border-box;
-    padding-top: 3.6rem;
-    position: relative;
+  :root {
+    --abhiai-mobile-topbar-h: 3.55rem;
+    --abhiai-mobile-composer-h: 5.1rem;
   }
 
-  /* Persistent mobile app bar: menu + AbhiAI brand remain visible in long chats. */
+  html,
+  body {
+    width: 100%;
+    min-height: 100%;
+    overscroll-behavior: none;
+  }
+
+  /* The app owns the visual viewport on mobile. */
+  .h-screen.bg-transparent.overflow-hidden {
+    width: 100%;
+    height: 100dvh !important;
+    min-height: 100dvh !important;
+    max-height: 100dvh !important;
+    overflow: hidden !important;
+  }
+
+  .h-screen.bg-transparent.overflow-hidden > .md\:ml-72 {
+    position: relative;
+    height: 100dvh !important;
+    min-height: 0 !important;
+    padding-top: var(--abhiai-mobile-topbar-h);
+    overflow: hidden !important;
+  }
+
+  /* The legacy app header remains mounted so its model callback keeps working,
+     but it is not part of the phone UI anymore. */
   .h-screen > .md\:ml-72 > header {
-    position: absolute !important;
-    inset: 0 0 auto 0 !important;
-    top: 0 !important;
-    height: 3.6rem !important;
-    min-height: 3.6rem !important;
-    z-index: 80 !important;
-    padding: 0 0.65rem !important;
-    border-bottom: 1px solid rgb(228 228 231 / 0.68) !important;
-    background: rgb(255 255 255 / 0.82) !important;
+    display: none !important;
+  }
+
+  /* Dedicated mobile top bar. */
+  .abhiai-mobile-topbar {
+    position: fixed;
+    inset: 0 0 auto 0;
+    z-index: 110;
+    height: var(--abhiai-mobile-topbar-h);
+    display: grid;
+    grid-template-columns: 2.4rem minmax(0, 1fr) 2.4rem;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0 0.65rem;
+    border-bottom: 1px solid rgb(228 228 231 / 0.68);
+    background: rgb(255 255 255 / 0.86);
     -webkit-backdrop-filter: blur(18px) saturate(1.25);
     backdrop-filter: blur(18px) saturate(1.25);
-    box-shadow: 0 1px 0 rgb(24 24 27 / 0.025);
+    box-shadow: 0 1px 0 rgb(24 24 27 / 0.03);
   }
 
-  .dark .h-screen > .md\:ml-72 > header {
-    border-bottom-color: rgb(39 39 42 / 0.72) !important;
-    background: rgb(9 9 11 / 0.82) !important;
+  .dark .abhiai-mobile-topbar {
+    border-bottom-color: rgb(39 39 42 / 0.78);
+    background: rgb(9 9 11 / 0.86);
   }
 
-  .h-screen > .md\:ml-72 > header > div:first-child {
+  .abhiai-mobile-menu-btn {
+    width: 2.35rem;
+    height: 2.35rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.85rem;
+    color: rgb(63 63 70);
+    transition: background 160ms ease, color 160ms ease, transform 160ms ease;
+  }
+
+  .abhiai-mobile-menu-btn:active {
+    transform: scale(0.96);
+  }
+
+  .abhiai-mobile-menu-btn:hover {
+    background: rgb(244 244 245 / 0.9);
+  }
+
+  .dark .abhiai-mobile-menu-btn {
+    color: rgb(212 212 216);
+  }
+
+  .dark .abhiai-mobile-menu-btn:hover {
+    background: rgb(39 39 42 / 0.9);
+  }
+
+  .abhiai-mobile-brand {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+  }
+
+  .abhiai-mobile-topbar-spacer {
+    width: 2.35rem;
+    height: 2.35rem;
+  }
+
+  /* The conversation itself scrolls; the page does not. */
+  .h-screen > .md\:ml-72 > div[class~="flex-1"][class~="overflow-y-auto"] {
+    min-height: 0 !important;
+    padding-bottom: calc(var(--abhiai-mobile-composer-h) + 1.4rem) !important;
+    scroll-padding-top: 0.75rem;
+    scroll-padding-bottom: calc(var(--abhiai-mobile-composer-h) + 1.4rem);
+  }
+
+  .h-screen > .md\:ml-72 > div[class~="flex-1"][class~="overflow-y-auto"] > div[class~="pb-8"][class~="max-w-3xl"] {
+    margin-top: 0.25rem !important;
+    padding: 0.55rem 0.75rem 1.5rem !important;
+  }
+
+  .h-screen > .md\:ml-72 > div[class~="flex-1"][class~="overflow-y-auto"] > div[class~="pb-8"][class~="max-w-3xl"] > * + * {
+    margin-top: 1rem !important;
+  }
+
+  /* Repeated avatars waste useful width on phones. */
+  .h-screen > .md\:ml-72 .justify-start > .mt-1.shrink-0,
+  .h-screen > .md\:ml-72 .justify-end > .w-8.h-8.shrink-0 {
+    display: none !important;
+  }
+
+  /* Assistant replies stay flat and readable; user messages stay compact. */
+  .h-screen > .md\:ml-72 .justify-start > div[class*="max-w-[85%]"] {
     flex: 1 1 auto !important;
     min-width: 0 !important;
-    gap: 0.45rem !important;
-  }
-
-  .h-screen > .md\:ml-72 > header > div:last-child {
-    flex: 0 0 auto !important;
-    gap: 0.25rem !important;
-  }
-
-  .h-screen > .md\:ml-72 > header > div:first-child > button[aria-label="Open Navigation"] {
-    width: 2.25rem !important;
-    height: 2.25rem !important;
-    flex: 0 0 2.25rem !important;
-    margin-left: -0.2rem !important;
-    padding: 0 !important;
-  }
-
-  /* Make the mobile wordmark feel intentional rather than like a tiny icon. */
-  .h-screen > .md\:ml-72 > header > div:first-child > div.md\:hidden.flex.items-center::after {
-    content: "AbhiAI" !important;
-    margin-left: 0.38rem !important;
-    color: rgb(24 24 27) !important;
-    font-size: 0.9rem !important;
-    line-height: 1 !important;
-    font-weight: 760 !important;
-    letter-spacing: -0.025em !important;
-    white-space: nowrap !important;
-  }
-
-  .dark .h-screen > .md\:ml-72 > header > div:first-child > div.md\:hidden.flex.items-center::after {
-    color: rgb(250 250 250) !important;
-  }
-
-  /* The model picker moves from the crowded header to the composer toolbar. */
-  [data-abhiai-model-selector] {
-    position: fixed !important;
-    left: 0.7rem !important;
-    bottom: calc(max(0.3rem, env(safe-area-inset-bottom)) + 2.95rem) !important;
-    z-index: 75 !important;
-    width: auto !important;
-    max-width: 9.4rem !important;
-  }
-
-  [data-abhiai-model-selector] > button {
-    min-height: 1.72rem !important;
-    max-width: 9.4rem !important;
-    padding: 0.28rem 0.65rem !important;
-    gap: 0.38rem !important;
+    max-width: 100% !important;
+    padding: 0.25rem 0 0.5rem !important;
     border: 0 !important;
-    border-radius: 9999px !important;
-    background: rgb(244 244 245 / 0.94) !important;
-    color: rgb(63 63 70) !important;
-    box-shadow: inset 0 0 0 1px rgb(228 228 231 / 0.75), 0 2px 8px rgb(24 24 27 / 0.04) !important;
-    -webkit-backdrop-filter: blur(14px);
-    backdrop-filter: blur(14px);
-    font-size: 0.72rem !important;
-    font-weight: 650 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
   }
 
-  .dark [data-abhiai-model-selector] > button {
-    background: rgb(39 39 42 / 0.94) !important;
-    color: rgb(228 228 231) !important;
-    box-shadow: inset 0 0 0 1px rgb(63 63 70 / 0.8), 0 4px 14px rgb(0 0 0 / 0.2) !important;
+  .h-screen > .md\:ml-72 .justify-end > div[class*="max-w-[85%]"] {
+    max-width: 92% !important;
+    padding: 0.68rem 1rem !important;
+    border-radius: 1.35rem !important;
   }
 
-  [data-abhiai-model-selector] > div[class*="absolute"] {
-    top: auto !important;
-    bottom: calc(100% + 0.45rem) !important;
+  .h-screen > .md\:ml-72 .prose {
+    font-size: 0.95rem !important;
+    line-height: 1.65 !important;
+  }
+
+  .h-screen > .md\:ml-72 .prose p,
+  .h-screen > .md\:ml-72 .prose li {
+    line-height: 1.65 !important;
+  }
+
+  /* Real fixed-bottom composer. This removes the large empty strip that was
+     visible below the input on Android browser/PWA layouts. */
+  .chat-composer-shell {
+    position: fixed !important;
     left: 0 !important;
-    margin-top: 0 !important;
-    width: min(15rem, calc(100vw - 1.4rem)) !important;
-    max-height: min(22rem, 55dvh) !important;
-    overflow-y: auto !important;
-    transform-origin: bottom left !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    z-index: 80 !important;
+    width: 100% !important;
+    padding: 0.24rem 0.55rem max(0.22rem, env(safe-area-inset-bottom)) !important;
+    background: linear-gradient(
+      to top,
+      rgb(255 255 255 / 0.99) 42%,
+      rgb(255 255 255 / 0.92) 74%,
+      transparent 100%
+    ) !important;
+    pointer-events: none;
   }
 
-  /* The top toolbar now only reserves the right side for Web Search/listening. */
+  .dark .chat-composer-shell {
+    background: linear-gradient(
+      to top,
+      rgb(9 9 11 / 0.99) 42%,
+      rgb(9 9 11 / 0.93) 74%,
+      transparent 100%
+    ) !important;
+  }
+
+  .chat-composer-shell > div {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    pointer-events: auto;
+  }
+
+  /* Toolbar leaves a real left slot for the independent model picker. */
   .chat-composer-shell > div > div:first-child {
-    min-height: 1.75rem !important;
+    min-height: 1.78rem !important;
+    display: flex !important;
+    align-items: center !important;
     justify-content: flex-end !important;
-    padding-left: 9.7rem !important;
-    padding-right: 0.1rem !important;
+    gap: 0.35rem !important;
+    padding: 0 0.1rem 0 10.15rem !important;
     overflow: visible !important;
   }
 
   .chat-composer-shell > div > div:first-child > button {
-    min-height: 1.7rem !important;
-    padding: 0.25rem 0.6rem !important;
+    min-height: 1.72rem !important;
+    padding: 0.24rem 0.62rem !important;
     border-radius: 9999px !important;
     font-size: 0.7rem !important;
+    line-height: 1rem !important;
     white-space: nowrap !important;
   }
 
-  /* Keep the composer at the visual bottom, like Claude/Perplexity mobile. */
-  .chat-composer-shell {
-    position: relative !important;
-    z-index: 60 !important;
-    padding: 0.22rem 0.55rem max(0.2rem, env(safe-area-inset-bottom)) !important;
-    background: linear-gradient(to top, rgb(255 255 255 / 0.98) 48%, rgb(255 255 255 / 0.88) 72%, transparent) !important;
-  }
-
-  .dark .chat-composer-shell {
-    background: linear-gradient(to top, rgb(9 9 11 / 0.98) 48%, rgb(9 9 11 / 0.9) 72%, transparent) !important;
-  }
-
   .chat-composer-shell form {
-    min-height: 2.72rem !important;
-    padding: 0.25rem 0.28rem !important;
+    min-height: 2.75rem !important;
+    padding: 0.23rem 0.28rem !important;
     border-radius: 1.45rem !important;
-    background: rgb(255 255 255 / 0.94) !important;
-    box-shadow: 0 5px 20px rgb(24 24 27 / 0.07) !important;
+    background: rgb(255 255 255 / 0.96) !important;
+    box-shadow: 0 6px 22px rgb(24 24 27 / 0.08) !important;
   }
 
   .dark .chat-composer-shell form {
-    background: rgb(24 24 27 / 0.94) !important;
-    box-shadow: 0 8px 24px rgb(0 0 0 / 0.24) !important;
+    background: rgb(24 24 27 / 0.96) !important;
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.26) !important;
   }
 
-  .chat-composer-shell textarea {
-    min-height: 2.15rem !important;
-    max-height: 7rem !important;
-    padding: 0.42rem 0.42rem !important;
-    font-size: 0.92rem !important;
-    line-height: 1.3rem !important;
+  .chat-composer-shell form > div:last-child {
+    gap: 0.15rem !important;
   }
 
   .chat-composer-shell form > div:last-child > button {
-    width: 2.1rem !important;
-    height: 2.1rem !important;
+    width: 2.08rem !important;
+    height: 2.08rem !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
     margin-bottom: 0.05rem !important;
   }
 
-  /* The warning still exists on desktop; hide it on phones to reclaim vertical space. */
+  .chat-composer-shell textarea {
+    min-height: 2.05rem !important;
+    max-height: 6.8rem !important;
+    padding: 0.4rem 0.4rem !important;
+    font-size: 0.91rem !important;
+    line-height: 1.3rem !important;
+  }
+
   .chat-composer-shell > div > p:last-child {
     display: none !important;
   }
 
-  /* Account for the shorter composer when showing the jump-to-latest control. */
+  /* Mobile model picker is a separate real React instance. The hidden header
+     selector remains mounted only to feed ChatApplication's selectedModel state. */
+  [data-abhiai-model-selector="header"] {
+    display: none !important;
+  }
+
+  .abhiai-mobile-model-dock {
+    position: fixed;
+    left: 0.65rem;
+    bottom: calc(max(0.22rem, env(safe-area-inset-bottom)) + 3.18rem);
+    z-index: 100;
+    max-width: 9.7rem;
+    pointer-events: none;
+  }
+
+  .abhiai-mobile-model-dock [data-abhiai-model-selector="dock"] {
+    pointer-events: auto;
+  }
+
+  .abhiai-mobile-model-dock [data-abhiai-model-selector="dock"] > button {
+    min-height: 1.72rem;
+    max-width: 9.7rem;
+    padding: 0.26rem 0.66rem;
+    border-radius: 9999px;
+    font-size: 0.71rem;
+    box-shadow: 0 4px 15px rgb(24 24 27 / 0.08);
+  }
+
+  .dark .abhiai-mobile-model-dock [data-abhiai-model-selector="dock"] > button {
+    box-shadow: 0 5px 18px rgb(0 0 0 / 0.26);
+  }
+
+  /* Jump-to-latest sits just above the fixed composer. */
   .h-screen > .md\:ml-72 > button[title="Jump to latest message"] {
-    bottom: 5.15rem !important;
+    bottom: calc(var(--abhiai-mobile-composer-h) + 1.1rem) !important;
   }
 
-  /* Header model picker no longer occupies layout width after it moves to bottom. */
-  .h-screen > .md\:ml-72 > header [data-abhiai-model-selector] {
-    flex: 0 0 auto !important;
+  /* Code and tables can consume the answer width. */
+  .h-screen > .md\:ml-72 .prose > div,
+  .h-screen > .md\:ml-72 .prose pre,
+  .h-screen > .md\:ml-72 .prose table {
+    max-width: 100% !important;
   }
 
-  /* On very narrow screens keep secondary header actions out of the way. */
-  @media (max-width: 390px) {
-    .h-screen > .md\:ml-72 > header > div:last-child > button[title="Select Agent"] {
-      display: none !important;
-    }
+  .abhiai-markdown pre,
+  .abhiai-markdown table {
+    font-size: 0.84rem;
+  }
+
+  /* Sidebar must sit above the fixed mobile chrome when opened. */
+  .h-screen > .fixed.inset-y-0.left-0 {
+    z-index: 140 !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
   }
 }
