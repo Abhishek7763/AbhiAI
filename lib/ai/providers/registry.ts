@@ -1,4 +1,4 @@
-import type { ProviderAdapter } from './base';
+import type { AIModel, ProviderAdapter } from './base';
 import { GoogleProvider } from './google';
 import { OpenAICompatibleProvider } from './openai-compatible';
 
@@ -10,11 +10,7 @@ export type ProviderTemplate = {
   authType: 'api_key';
   isPreset: boolean;
   requiresBaseUrl?: boolean;
-  defaultModels: Array<{
-    id: string;
-    name: string;
-    capabilities: string[];
-  }>;
+  defaultModels: AIModel[];
 };
 
 /**
@@ -32,9 +28,9 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     authType: 'api_key',
     isPreset: true,
     defaultModels: [
-      { id: 'gemini-3.7-flash', name: 'Gemini 3.7 Flash', capabilities: ['text', 'vision', 'reasoning', 'fast'] },
-      { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash', capabilities: ['text', 'vision', 'fast', 'coding'] },
-      { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash-Lite', capabilities: ['text', 'fast'] },
+      { id: 'gemini-3.7-flash', name: 'Gemini 3.7 Flash', provider: 'google', capabilities: ['text', 'vision', 'reasoning', 'fast'] },
+      { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash', provider: 'google', capabilities: ['text', 'vision', 'fast', 'coding'] },
+      { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash-Lite', provider: 'google', capabilities: ['text', 'fast'] },
     ],
   },
   {
@@ -121,12 +117,15 @@ export function getProviderTemplate(id: string) {
 }
 
 export function getProviderAdapter(id: string, customBaseUrl?: string): ProviderAdapter | null {
-  const existing = dynamicAdapters.get(id);
-  if (existing) return existing;
+  if (id === 'google') return dynamicAdapters.get('google') ?? null;
 
   const template = getProviderTemplate(id);
   const baseUrl = customBaseUrl?.trim() || template?.baseUrl || '';
   if (!baseUrl) return null;
+
+  const cacheKey = `${id}:${baseUrl.replace(/\/+$/, '')}`;
+  const existing = dynamicAdapters.get(cacheKey);
+  if (existing) return existing;
 
   const adapter = new OpenAICompatibleProvider({
     id,
@@ -134,7 +133,7 @@ export function getProviderAdapter(id: string, customBaseUrl?: string): Provider
     baseUrl,
     knownModels: template?.defaultModels,
   });
-  dynamicAdapters.set(id, adapter);
+  dynamicAdapters.set(cacheKey, adapter);
   return adapter;
 }
 

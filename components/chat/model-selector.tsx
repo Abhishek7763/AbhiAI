@@ -4,6 +4,7 @@ import { ChevronDown, Zap, Sparkles, Eye, Code, Palette, Check } from 'lucide-re
 import { motion, AnimatePresence } from 'motion/react';
 
 const DEFAULT_MODELS = [
+  { id: 'auto', name: 'AbhiAI Auto' },
   { id: 'gemini-3.7-flash', name: 'AbhiAI Think' },
   { id: 'gemini-3.6-flash', name: 'AbhiAI Code' },
   { id: 'gemini-3.5-flash-lite', name: 'AbhiAI Fast' },
@@ -21,7 +22,7 @@ type ModelSelectorProps = {
 function ModelIcon({ name, className }: { name: string; className?: string }) {
   const n = (name || '').toLowerCase();
   if (n.includes('fast') || n.includes('lite')) return <Zap className={className} />;
-  if (n.includes('think') || n.includes('reason')) return <Sparkles className={className} />;
+  if (n.includes('think') || n.includes('reason') || n.includes('auto')) return <Sparkles className={className} />;
   if (n.includes('vision')) return <Eye className={className} />;
   if (n.includes('code')) return <Code className={className} />;
   if (n.includes('creative')) return <Palette className={className} />;
