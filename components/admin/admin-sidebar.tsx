@@ -5,11 +5,9 @@ import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
   MessageSquare,
-  Server,
-  Cpu,
   Boxes,
+  Cpu,
   Bot,
-  Globe,
   Activity,
   BarChart,
   FileText,
@@ -22,13 +20,11 @@ import AdminLogoutButton from '@/components/admin/admin-logout-button';
 
 const NAV_ITEMS = [
   { name: 'Overview', href: '/admin', icon: LayoutDashboard },
-  { name: 'AI Chat', href: '/admin/chat', icon: MessageSquare },
-  { name: 'Providers', href: '/admin/providers', icon: Boxes },
+  { name: 'Admin AI', href: '/admin/chat', icon: MessageSquare },
+  { name: 'Integrations', href: '/admin/providers', icon: Boxes },
   { name: 'Models', href: '/admin/models', icon: Cpu },
   { name: 'Smart Routing', href: '/admin/routing', icon: Route },
-  { name: 'AI Connections', href: '/admin/connections', icon: Server },
   { name: 'Agents', href: '/admin/agents', icon: Bot },
-  { name: 'Public AI', href: '/admin/public-ai', icon: Globe },
   { name: 'Health', href: '/admin/health', icon: Activity },
   { name: 'Usage', href: '/admin/usage', icon: BarChart },
   { name: 'Instructions', href: '/admin/instructions', icon: FileText },

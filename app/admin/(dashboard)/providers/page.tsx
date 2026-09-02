@@ -14,9 +14,9 @@ export default async function ProvidersPage() {
             <Boxes className="w-5 h-5" />
           </div>
           <div>
-            <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">Providers & Integrations</h1>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
-              Connect multiple AI APIs, discover their models and keep credentials encrypted server-side.
+            <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">Integrations</h1>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1 max-w-2xl">
+              Add AI providers, save encrypted API keys, test connectivity and discover/import models from one place.
             </p>
           </div>
         </div>

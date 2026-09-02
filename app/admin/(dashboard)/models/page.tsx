@@ -1,10 +1,9 @@
 import { Cpu } from 'lucide-react';
 import { ModelBrandingPanel } from '@/components/admin/model-branding-panel';
-import { isBrandedRuntimeModel } from '@/lib/ai/model-branding';
 import { getStoredModels } from '@/lib/data/admin-config';
 
 export default async function ModelsPage() {
-  const models = (await getStoredModels()).filter((model) => isBrandedRuntimeModel(model.id));
+  const models = await getStoredModels();
 
   return (
     <div className="space-y-6">
@@ -16,7 +15,7 @@ export default async function ModelsPage() {
           <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">Models</h1>
         </div>
         <p className="max-w-2xl text-sm text-zinc-500 dark:text-zinc-400 sm:text-base">
-          Control the public AbhiAI names shown in chat while the provider-specific model IDs remain internal.
+          Manage imported models in one place. Rename them, enable or disable them, and control whether they are public-facing.
         </p>
       </div>
 
