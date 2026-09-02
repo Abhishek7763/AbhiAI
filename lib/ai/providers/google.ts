@@ -63,7 +63,7 @@ export class GoogleProvider implements ProviderAdapter {
         contents,
         config
       });
-      return response.text;
+      return response.text ?? 'No response generated.';
     } catch (error: any) {
       console.error("GoogleProvider chat error:", error);
       throw new Error(error.message || "Failed to generate content.");

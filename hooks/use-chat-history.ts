@@ -1,17 +1,7 @@
 import { useState } from "react";
+import type { Message } from "@/types/chat";
 
-export interface Attachment {
-  name: string;
-  type: string;
-  data: string;
-}
-
-export interface Message {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  attachments?: Attachment[];
-}
+export type { Message } from "@/types/chat";
 
 export interface ChatSession {
   id: string;
@@ -43,11 +33,12 @@ export function useChatHistory() {
     }
   };
 
-  const createSession = (initialMessages: Message[]) => {
+  const createSession = (initialTitle?: string, initialMessages: Message[] = []) => {
     const titleMessage = initialMessages.find(m => m.role === "user");
-    const title = titleMessage 
-      ? titleMessage.content.slice(0, 30) + (titleMessage.content.length > 30 ? "..." : "") 
+    const derivedTitle = titleMessage
+      ? titleMessage.content.slice(0, 30) + (titleMessage.content.length > 30 ? "..." : "")
       : "New Chat";
+    const title = initialTitle?.trim() || derivedTitle;
     
     const newSession: ChatSession = {
       id: Date.now().toString(),

@@ -1,7 +1,6 @@
-import fs from 'fs';
-import path from 'path';
+import { readJsonFile, writeJsonFile } from './config/file-store';
 
-const CONFIG_FILE = path.join(process.cwd(), 'models.json');
+const CONFIG_FILE = 'models.json';
 
 export interface AIModelConfig {
   id: string; // The backend model ID (e.g., gemini-3.5-flash)
@@ -15,14 +14,8 @@ export interface AIModelConfig {
 }
 
 export function getModels(): Record<string, AIModelConfig> {
-  try {
-    if (fs.existsSync(CONFIG_FILE)) {
-      const data = fs.readFileSync(CONFIG_FILE, 'utf-8');
-      return JSON.parse(data);
-    }
-  } catch (error) {
-    console.error('Error reading models config:', error);
-  }
+  const storedModels = readJsonFile<Record<string, AIModelConfig>>(CONFIG_FILE);
+  if (storedModels) return storedModels;
   
   // Default seed data
   const defaultModels: Record<string, AIModelConfig> = {
@@ -53,13 +46,7 @@ export function getModels(): Record<string, AIModelConfig> {
 }
 
 export function saveModels(models: Record<string, AIModelConfig>) {
-  try {
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify(models, null, 2));
-    return true;
-  } catch (error) {
-    console.error('Error saving models config:', error);
-    return false;
-  }
+  return writeJsonFile(CONFIG_FILE, models);
 }
 
 export function getPublicModels(): AIModelConfig[] {

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getProviders, saveProviders, ProviderConfig } from '@/lib/providers';
+import { FILE_STORE_UNAVAILABLE_MESSAGE } from '@/lib/config/file-store';
 
 export async function GET() {
   const providers = getProviders();
@@ -57,7 +58,7 @@ export async function POST(req: Request) {
     if (success) {
       return NextResponse.json({ success: true });
     } else {
-      return NextResponse.json({ error: 'Failed to save config' }, { status: 500 });
+      return NextResponse.json({ error: FILE_STORE_UNAVAILABLE_MESSAGE }, { status: 503 });
     }
   } catch (error) {
     return NextResponse.json({ error: 'Invalid request' }, { status: 400 });

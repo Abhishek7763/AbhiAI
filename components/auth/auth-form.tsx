@@ -54,7 +54,7 @@ export default function AuthForm() {
     <div className="w-full max-w-md mx-auto p-8 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl shadow-xl">
       <div className="flex flex-col items-center mb-8">
         <div className="mb-5">
-          <AbhiLogo variant="full" size="lg" withGlow={true} />
+          <AbhiLogo variant="full" size="lg" />
         </div>
         <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">
           {isLogin ? 'Welcome back to AbhiAI' : 'Create your AbhiAI Account'}

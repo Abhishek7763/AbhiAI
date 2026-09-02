@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getConnections, saveConnections, AIConnection } from '@/lib/connections';
+import { FILE_STORE_UNAVAILABLE_MESSAGE } from '@/lib/config/file-store';
 
 export async function GET() {
   const connections = getConnections();
@@ -19,7 +20,12 @@ export async function POST(req: Request) {
       id
     };
     
-    saveConnections(connections);
+    if (!saveConnections(connections)) {
+      return NextResponse.json(
+        { error: FILE_STORE_UNAVAILABLE_MESSAGE },
+        { status: 503 },
+      );
+    }
     return NextResponse.json({ success: true, connection: connections[id] });
   } catch (error) {
     return NextResponse.json({ error: 'Failed to save connection' }, { status: 500 });
@@ -34,10 +40,15 @@ export async function DELETE(req: Request) {
     
     const connections = getConnections();
     delete connections[id];
-    saveConnections(connections);
+    if (!saveConnections(connections)) {
+      return NextResponse.json(
+        { error: FILE_STORE_UNAVAILABLE_MESSAGE },
+        { status: 503 },
+      );
+    }
     
     return NextResponse.json({ success: true });
-  } catch (error) {
+  } catch {
     return NextResponse.json({ error: 'Failed to delete' }, { status: 500 });
   }
 }

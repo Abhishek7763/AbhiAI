@@ -215,7 +215,7 @@ export default function ChatApplication() {
       }))
     );
 
-    const userMessage: any = { 
+    const userMessage: Message = {
       id: Date.now().toString(), 
       role: 'user', 
       content: input,

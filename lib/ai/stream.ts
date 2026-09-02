@@ -1,4 +1,4 @@
-import { ChatMessage } from './base';
+import { ChatMessage } from './providers/base';
 
 export interface StreamChunk {
   text?: string;

@@ -1,5 +1,4 @@
-import fs from 'fs';
-import path from 'path';
+import { readJsonFile, writeJsonFile } from './config/file-store';
 
 export interface AIAgent {
   id: string;
@@ -100,27 +99,16 @@ Craft captivating, high-impact prose tailored to the requested audience with com
   }
 ];
 
-const AGENTS_FILE = path.join(process.cwd(), 'agents.json');
+const AGENTS_FILE = 'agents.json';
 
 export function getAgents(): AIAgent[] {
-  try {
-    if (fs.existsSync(AGENTS_FILE)) {
-      const data = fs.readFileSync(AGENTS_FILE, 'utf8');
-      const parsed = JSON.parse(data);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
-      }
-    }
-  } catch (e) {
-    console.error('Error reading agents.json:', e);
+  const parsed = readJsonFile<AIAgent[]>(AGENTS_FILE);
+  if (Array.isArray(parsed) && parsed.length > 0) {
+    return parsed;
   }
   return DEFAULT_AGENTS;
 }
 
-export function saveAgents(agents: AIAgent[]): void {
-  try {
-    fs.writeFileSync(AGENTS_FILE, JSON.stringify(agents, null, 2), 'utf8');
-  } catch (e) {
-    console.error('Error saving agents.json:', e);
-  }
+export function saveAgents(agents: AIAgent[]): boolean {
+  return writeJsonFile(AGENTS_FILE, agents);
 }

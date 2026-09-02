@@ -1,6 +1,5 @@
-import fs from 'fs';
-import path from 'path';
 import { getAppSettings } from './app-settings';
+import { readJsonFile, writeJsonFile } from './config/file-store';
 
 export interface AIConnection {
   id: string;
@@ -14,7 +13,7 @@ export interface AIConnection {
   isActive: boolean;
 }
 
-const CONNECTIONS_FILE = path.join(process.cwd(), 'connections.json');
+const CONNECTIONS_FILE = 'connections.json';
 
 function getDefaultConnections(): Record<string, AIConnection> {
   const appSettings = getAppSettings();
@@ -58,32 +57,24 @@ function getDefaultConnections(): Record<string, AIConnection> {
 }
 
 export function getConnections(): Record<string, AIConnection> {
-  try {
-    if (fs.existsSync(CONNECTIONS_FILE)) {
-      const data = fs.readFileSync(CONNECTIONS_FILE, 'utf-8');
-      const parsed = JSON.parse(data);
-      if (parsed && Object.keys(parsed).length > 0) {
-        // If an entry lacks apiKey, fallback to process.env.GEMINI_API_KEY if applicable
-        const envKey = process.env.GEMINI_API_KEY || '';
-        for (const key of Object.keys(parsed)) {
-          if (!parsed[key].apiKey && parsed[key].providerId === 'google' && envKey) {
-            parsed[key].apiKey = envKey;
-          }
-        }
-        return parsed;
+  const parsed = readJsonFile<Record<string, AIConnection>>(CONNECTIONS_FILE);
+  if (parsed && Object.keys(parsed).length > 0) {
+    // If an entry lacks apiKey, fallback to process.env.GEMINI_API_KEY if applicable
+    const envKey = process.env.GEMINI_API_KEY || '';
+    for (const key of Object.keys(parsed)) {
+      const connection = parsed[key];
+      const isGoogleConnection =
+        connection.baseUrl.toLowerCase().includes('google') ||
+        connection.modelId.toLowerCase().includes('gemini');
+      if (!connection.apiKey && isGoogleConnection && envKey) {
+        parsed[key].apiKey = envKey;
       }
     }
-  } catch (error) {
-    console.error('Failed to read connections:', error);
+    return parsed;
   }
   return getDefaultConnections();
 }
 
 export function saveConnections(connections: Record<string, AIConnection>) {
-  try {
-    fs.writeFileSync(CONNECTIONS_FILE, JSON.stringify(connections, null, 2));
-  } catch (error) {
-    console.warn('Failed to save connections to disk (may be read-only on Vercel):', error);
-  }
+  return writeJsonFile(CONNECTIONS_FILE, connections);
 }
-

@@ -1,5 +1,4 @@
-import fs from 'fs';
-import path from 'path';
+import { readJsonFile, writeJsonFile } from './config/file-store';
 
 export interface UsageEntry {
   id: string;
@@ -15,34 +14,21 @@ export interface UsageEntry {
   ip?: string;
 }
 
-const USAGE_FILE = path.join(process.cwd(), 'usage-logs.json');
+const USAGE_FILE = 'usage-logs.json';
 
 export function logUsageEvent(entry: Omit<UsageEntry, 'id' | 'timestamp'>): void {
-  try {
-    const logs = getUsageLogs();
-    const newEntry: UsageEntry = {
-      ...entry,
-      id: `use-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      timestamp: new Date().toISOString(),
-    };
-    logs.unshift(newEntry);
-    // Keep max 500 logs locally
-    const trimmed = logs.slice(0, 500);
-    fs.writeFileSync(USAGE_FILE, JSON.stringify(trimmed, null, 2), 'utf8');
-  } catch (err) {
-    console.error('Error recording usage log:', err);
-  }
+  const logs = getUsageLogs();
+  const newEntry: UsageEntry = {
+    ...entry,
+    id: `use-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    timestamp: new Date().toISOString(),
+  };
+  // Phase 2 moves usage events to Supabase. Until then, Vercel skips this
+  // best-effort local write instead of throwing EROFS runtime errors.
+  writeJsonFile(USAGE_FILE, [newEntry, ...logs].slice(0, 500));
 }
 
 export function getUsageLogs(): UsageEntry[] {
-  try {
-    if (fs.existsSync(USAGE_FILE)) {
-      const data = fs.readFileSync(USAGE_FILE, 'utf8');
-      const parsed = JSON.parse(data);
-      if (Array.isArray(parsed)) return parsed;
-    }
-  } catch (err) {
-    console.error('Error reading usage logs:', err);
-  }
-  return [];
+  const parsed = readJsonFile<UsageEntry[]>(USAGE_FILE);
+  return Array.isArray(parsed) ? parsed : [];
 }

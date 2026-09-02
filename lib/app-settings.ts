@@ -1,5 +1,4 @@
-import fs from 'fs';
-import path from 'path';
+import { readJsonFile, writeJsonFile } from './config/file-store';
 
 export interface AppSettings {
   appName: string;
@@ -46,32 +45,20 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   lastUpdated: new Date().toISOString(),
 };
 
-const SETTINGS_FILE = path.join(process.cwd(), 'app-settings.json');
+const SETTINGS_FILE = 'app-settings.json';
 
 export function getAppSettings(): AppSettings {
-  try {
-    if (fs.existsSync(SETTINGS_FILE)) {
-      const data = fs.readFileSync(SETTINGS_FILE, 'utf8');
-      return { ...DEFAULT_APP_SETTINGS, ...JSON.parse(data) };
-    }
-  } catch (err) {
-    console.error('Error reading app-settings.json:', err);
-  }
-  return DEFAULT_APP_SETTINGS;
+  const storedSettings = readJsonFile<Partial<AppSettings>>(SETTINGS_FILE);
+  return storedSettings
+    ? { ...DEFAULT_APP_SETTINGS, ...storedSettings }
+    : DEFAULT_APP_SETTINGS;
 }
 
-export function saveAppSettings(settings: Partial<AppSettings>): AppSettings {
-  try {
-    const current = getAppSettings();
-    const updated = {
-      ...current,
-      ...settings,
-      lastUpdated: new Date().toISOString(),
-    };
-    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(updated, null, 2), 'utf8');
-    return updated;
-  } catch (err) {
-    console.error('Error saving app-settings.json:', err);
-    return DEFAULT_APP_SETTINGS;
-  }
+export function saveAppSettings(settings: Partial<AppSettings>): AppSettings | null {
+  const updated = {
+    ...getAppSettings(),
+    ...settings,
+    lastUpdated: new Date().toISOString(),
+  };
+  return writeJsonFile(SETTINGS_FILE, updated) ? updated : null;
 }
