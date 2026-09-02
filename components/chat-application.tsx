@@ -149,7 +149,6 @@ export default function ChatApplication() {
     textarea.style.height = `${Math.min(textarea.scrollHeight, 128)}px`;
   };
 
-  // Handle inserting an AI generated image into the chat history
   const handleInsertImageToChat = (image: GeneratedImageItem) => {
     let targetSessionId = currentSessionId;
     if (!targetSessionId) {
@@ -174,24 +173,20 @@ export default function ChatApplication() {
     updateSession(targetSessionId, updated);
   };
 
-  // Speech Hooks
   const { speakingMessageId, speak } = useTextToSpeech();
   const { isListening, isSupported: isSpeechSupported, toggleListening } = useSpeechToText((transcript) => {
     setInput((prev) => (prev ? `${prev} ${transcript}` : transcript));
     requestAnimationFrame(adjustTextareaHeight);
   });
   
-  // Gemini Live Voice Mode Hook
   const { isLive, error: liveError, startLiveMode, stopLiveMode } = useLiveVoice();
 
-  // Keep following new tokens only while the user is already near the bottom.
   useEffect(() => {
     if (!isNearBottomRef.current) return;
     const frame = requestAnimationFrame(() => scrollToBottom('auto'));
     return () => cancelAnimationFrame(frame);
   }, [messages, isLoading]);
 
-  // Opening an old conversation should land on its latest message.
   useEffect(() => {
     isNearBottomRef.current = true;
     setShowScrollToBottom(false);
@@ -293,7 +288,6 @@ export default function ChatApplication() {
     let responseModelName = '';
     let failoverTriggered = false;
 
-    // Show one inline thinking state immediately; the same message becomes the streamed answer.
     updateSession(activeSessionId, [
       ...newMessages,
       {
@@ -313,10 +307,11 @@ export default function ChatApplication() {
         signal: controller.signal,
         body: JSON.stringify({ 
           message: sentInput,
+          // Keep prior attachments local. Re-sending their base64 on every turn makes
+          // long local chats unnecessarily large; the current files are sent below.
           history: newMessages.slice(0, -1).map(m => ({ 
             role: m.role, 
-            content: m.content,
-            attachments: m.attachments 
+            content: m.content
           })),
           modelId: modelToUse,
           attachments: processedAttachments,
