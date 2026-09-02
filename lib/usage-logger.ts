@@ -4,6 +4,9 @@ export interface UsageEntry {
   id: string;
   timestamp: string;
   modelOrAlias: string;
+  executedModelName?: string;
+  executedModelId?: string;
+  connectionId?: string;
   provider: string;
   promptLength: number;
   responseLength: number;
@@ -11,6 +14,7 @@ export interface UsageEntry {
   failoverUsed: boolean;
   isPublic: boolean;
   status: 'success' | 'error';
+  errorCode?: string;
   ip?: string;
 }
 
