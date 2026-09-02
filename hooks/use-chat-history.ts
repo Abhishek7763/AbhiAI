@@ -11,99 +11,143 @@ export interface ChatSession {
   isPinned?: boolean;
 }
 
-export function useChatHistory() {
-  const [sessions, setSessions] = useState<ChatSession[]>(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      const saved = localStorage.getItem("abhiai_sessions");
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
+const SESSIONS_KEY = "abhiai_sessions";
+const CURRENT_SESSION_KEY = "abhiai_current_session";
+
+function sortSessions(items: ChatSession[]) {
+  return [...items].sort((a, b) => {
+    if (a.isPinned && !b.isPinned) return -1;
+    if (!a.isPinned && b.isPinned) return 1;
+    return b.updatedAt - a.updatedAt;
   });
+}
 
-  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+function readStoredSessions(): ChatSession[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const saved = localStorage.getItem(SESSIONS_KEY);
+    if (!saved) return [];
+    const parsed = JSON.parse(saved);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
 
-  const saveSessions = (newSessions: ChatSession[]) => {
-    setSessions(newSessions);
-    try {
-      localStorage.setItem("abhiai_sessions", JSON.stringify(newSessions));
-    } catch {
-      // ignore
+function readStoredCurrentSessionId(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return localStorage.getItem(CURRENT_SESSION_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function persistSessions(items: ChatSession[]) {
+  try {
+    localStorage.setItem(SESSIONS_KEY, JSON.stringify(items));
+  } catch {
+    // Keep the in-memory chat usable even if browser storage is unavailable/full.
+  }
+}
+
+function persistCurrentSessionId(id: string | null) {
+  try {
+    if (id) {
+      localStorage.setItem(CURRENT_SESSION_KEY, id);
+    } else {
+      localStorage.removeItem(CURRENT_SESSION_KEY);
     }
+  } catch {
+    // Ignore storage failures; the current tab can still use the selected session.
+  }
+}
+
+export function useChatHistory() {
+  const [sessions, setSessions] = useState<ChatSession[]>(readStoredSessions);
+  const [currentSessionId, setCurrentSessionIdState] = useState<string | null>(readStoredCurrentSessionId);
+
+  const commitSessions = (updater: (previous: ChatSession[]) => ChatSession[]) => {
+    setSessions((previous) => {
+      const next = updater(previous);
+      persistSessions(next);
+      return next;
+    });
+  };
+
+  const setCurrentSessionId = (id: string | null) => {
+    setCurrentSessionIdState(id);
+    persistCurrentSessionId(id);
   };
 
   const createSession = (initialTitle?: string, initialMessages: Message[] = []) => {
-    const titleMessage = initialMessages.find(m => m.role === "user");
+    const titleMessage = initialMessages.find((message) => message.role === "user");
     const derivedTitle = titleMessage
       ? titleMessage.content.slice(0, 30) + (titleMessage.content.length > 30 ? "..." : "")
       : "New Chat";
     const title = initialTitle?.trim() || derivedTitle;
-    
+    const now = Date.now();
     const newSession: ChatSession = {
-      id: Date.now().toString(),
+      id: `${now}_${Math.random().toString(36).slice(2, 8)}`,
       title,
       messages: initialMessages,
-      updatedAt: Date.now(),
+      updatedAt: now,
       isPinned: false,
     };
-    
-    saveSessions([newSession, ...sessions]);
+
+    commitSessions((previous) => sortSessions([newSession, ...previous]));
     setCurrentSessionId(newSession.id);
     return newSession.id;
   };
 
   const updateSession = (sessionId: string, newMessages: Message[]) => {
-    const updated = sessions.map(s => {
-      if (s.id === sessionId) {
+    commitSessions((previous) => {
+      let found = false;
+      const updated = previous.map((session) => {
+        if (session.id !== sessionId) return session;
+        found = true;
         return {
-          ...s,
+          ...session,
           messages: newMessages,
           updatedAt: Date.now(),
         };
-      }
-      return s;
+      });
+
+      return found ? sortSessions(updated) : previous;
     });
-    saveSessions(updated.sort((a, b) => {
-      if (a.isPinned && !b.isPinned) return -1;
-      if (!a.isPinned && b.isPinned) return 1;
-      return b.updatedAt - a.updatedAt;
-    }));
   };
 
   const renameSession = (sessionId: string, newTitle: string) => {
-    const updated = sessions.map(s => {
-      if (s.id === sessionId) {
-        return { ...s, title: newTitle.trim() || s.title };
-      }
-      return s;
-    });
-    saveSessions(updated);
+    commitSessions((previous) =>
+      previous.map((session) =>
+        session.id === sessionId
+          ? { ...session, title: newTitle.trim() || session.title }
+          : session,
+      ),
+    );
   };
 
   const togglePinSession = (sessionId: string) => {
-    const updated = sessions.map(s => {
-      if (s.id === sessionId) {
-        return { ...s, isPinned: !s.isPinned };
-      }
-      return s;
-    });
-    saveSessions(updated.sort((a, b) => {
-      if (a.isPinned && !b.isPinned) return -1;
-      if (!a.isPinned && b.isPinned) return 1;
-      return b.updatedAt - a.updatedAt;
-    }));
+    commitSessions((previous) =>
+      sortSessions(
+        previous.map((session) =>
+          session.id === sessionId
+            ? { ...session, isPinned: !session.isPinned }
+            : session,
+        ),
+      ),
+    );
   };
 
   const deleteSession = (sessionId: string) => {
-    saveSessions(sessions.filter(s => s.id !== sessionId));
+    commitSessions((previous) => previous.filter((session) => session.id !== sessionId));
     if (currentSessionId === sessionId) {
       setCurrentSessionId(null);
     }
   };
 
   const clearAllSessions = () => {
-    saveSessions([]);
+    commitSessions(() => []);
     setCurrentSessionId(null);
   };
 
@@ -111,8 +155,8 @@ export function useChatHistory() {
     setCurrentSessionId(null);
   };
 
-  const currentSession = sessions.find(s => s.id === currentSessionId);
-  const currentMessages = currentSession ? currentSession.messages : [];
+  const currentSession = sessions.find((session) => session.id === currentSessionId);
+  const currentMessages = currentSession?.messages ?? [];
 
   return {
     sessions,
@@ -125,6 +169,6 @@ export function useChatHistory() {
     togglePinSession,
     deleteSession,
     clearAllSessions,
-    startNewChat
+    startNewChat,
   };
 }
