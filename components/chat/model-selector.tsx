@@ -95,7 +95,7 @@ export default function ModelSelector({ onModelSelect }: { onModelSelect?: (mode
   const activeModel = selected || DEFAULT_MODELS[0];
 
   return (
-    <div className="relative min-w-0" ref={dropdownRef}>
+    <div className="relative min-w-0" ref={dropdownRef} data-abhiai-model-selector>
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
