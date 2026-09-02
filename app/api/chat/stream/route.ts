@@ -4,7 +4,8 @@ import { resolveRoutePlan, RouteCandidate } from "@/lib/ai/router";
 import { streamOpenAICompatible } from "@/lib/ai/stream";
 import { logUsageEvent } from "@/lib/usage-logger";
 import { recordRuntimeModelFailure, recordRuntimeModelSuccess } from "@/lib/ai/runtime-health";
-import { withFirstChunkTimeout, withTimeout } from "@/lib/ai/timeout";
+import { withStreamTimeout, withTimeout } from "@/lib/ai/timeout";
+import { sanitizeChatHistory, validateChatRequestSize, validateUserMessage } from "@/lib/ai/chat-input";
 import { fetchWebGroundingContext, type SearchResult } from "@/lib/ai/web-search";
 import {
   formatDocumentsForPrompt,
@@ -16,7 +17,12 @@ import {
 } from "@/lib/files/document-extractor";
 import { GoogleGenAI } from "@google/genai";
 
-const PROVIDER_FIRST_RESPONSE_TIMEOUT_MS = 45_000;
+export const maxDuration = 180;
+
+const PROVIDER_FIRST_RESPONSE_TIMEOUT_MS = 25_000;
+const PROVIDER_IDLE_TIMEOUT_MS = 30_000;
+const PROVIDER_TOTAL_TIMEOUT_MS = 90_000;
+const RUNTIME_HEALTH_WRITE_TIMEOUT_MS = 2_500;
 
 function cleanSourceTitle(value: string | undefined, fallback: string) {
   const cleaned = (value || '').replace(/[\[\]\n\r]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -41,20 +47,49 @@ function formatSourceAppendix(sources: SearchResult[]) {
   return `\n\n---\n**Web sources**\n${lines.join('\n')}`;
 }
 
+function isClientAbort(error: unknown) {
+  return error instanceof Error && error.message === 'CLIENT_ABORTED';
+}
+
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
   let requestedModel = 'default';
-  let failoverHappened = false;
+
+  const sizeError = validateChatRequestSize(req.headers.get('content-length'));
+  if (sizeError) {
+    return new Response(JSON.stringify({ error: sizeError }), {
+      status: 413,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
 
   try {
     const { message, history, modelId, attachments, webSearch } = await req.json();
-    const currentAttachments: AttachmentPayload[] = Array.isArray(attachments) ? attachments : [];
-    requestedModel = modelId || 'default';
+    const userMessage = typeof message === 'string' ? message : '';
+    const messageError = validateUserMessage(message);
+    if (messageError) {
+      return new Response(JSON.stringify({ error: messageError }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
 
-    if (!message && currentAttachments.length === 0) {
+    const currentAttachments: AttachmentPayload[] = Array.isArray(attachments)
+      ? attachments.filter((attachment: unknown): attachment is AttachmentPayload => Boolean(
+          attachment &&
+          typeof (attachment as AttachmentPayload).name === 'string' &&
+          typeof (attachment as AttachmentPayload).type === 'string' &&
+          typeof (attachment as AttachmentPayload).data === 'string',
+        ))
+      : [];
+    const safeHistory = sanitizeChatHistory(history);
+    const webSearchEnabled = webSearch === true;
+    requestedModel = typeof modelId === 'string' && modelId ? modelId : 'default';
+
+    if (!userMessage && currentAttachments.length === 0) {
       return new Response(JSON.stringify({ error: "Message or attachment is required" }), {
         status: 400,
-        headers: { "Content-Type": "application/json" }
+        headers: { "Content-Type": "application/json" },
       });
     }
 
@@ -62,42 +97,55 @@ export async function POST(req: NextRequest) {
     if (attachmentError) {
       return new Response(JSON.stringify({ error: attachmentError }), {
         status: 413,
-        headers: { "Content-Type": "application/json" }
+        headers: { "Content-Type": "application/json" },
       });
     }
 
     const requiresNativeMultimodal = currentAttachments.some((attachment) => isGeminiNativeAttachment(attachment));
-    const routePlan = await resolveRoutePlan(requestedModel, requiresNativeMultimodal, message || '');
+    const routePlan = await resolveRoutePlan(requestedModel, requiresNativeMultimodal, userMessage);
 
     if (!routePlan.primary) {
-      return new Response(JSON.stringify({ error: "No usable AI model is configured for this request. Open Admin > Providers and Smart Routing." }), {
+      return new Response(JSON.stringify({ error: "No usable AI model is configured for this request. Open Admin > Integrations and Smart Routing." }), {
         status: 503,
-        headers: { "Content-Type": "application/json" }
+        headers: { "Content-Type": "application/json" },
       });
     }
 
-    const executionChain: RouteCandidate[] = [
-      routePlan.primary,
-      ...routePlan.fallbacks
-    ];
+    const executionChain: RouteCandidate[] = [routePlan.primary, ...routePlan.fallbacks];
 
     let fallbackWebContext = '';
     let fallbackWebSources: SearchResult[] = [];
-    if (webSearch && message && executionChain.some((candidate) => candidate.providerId !== 'google')) {
-      const searchRes = await fetchWebGroundingContext(message);
+    if (webSearchEnabled && userMessage && executionChain.some((candidate) => candidate.providerId !== 'google')) {
+      const searchRes = await fetchWebGroundingContext(userMessage);
       fallbackWebContext = searchRes.contextText || '';
       fallbackWebSources = searchRes.sources || [];
     }
 
     const globalInstructions = getInstructions().systemPrompt || 'You are AbhiAI, an intelligent assistant created by Abhishek.';
     const encoder = new TextEncoder();
+    let streamCancelled = false;
 
     const stream = new ReadableStream({
       async start(controller) {
         let executionSucceeded = false;
+        let failoverHappened = false;
         let totalOutputChars = 0;
 
+        const isCancelled = () => streamCancelled || req.signal.aborted;
+        const emit = (payload: unknown) => {
+          if (isCancelled()) return false;
+          try {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+            return true;
+          } catch {
+            streamCancelled = true;
+            return false;
+          }
+        };
+
         for (const candidate of executionChain) {
+          if (isCancelled()) break;
+
           const candidateStartedAt = Date.now();
           let firstTokenAt: number | null = null;
           let candidateOutputChars = 0;
@@ -112,81 +160,58 @@ export async function POST(req: NextRequest) {
             const combinedPrompt = [
               globalInstructions,
               candidate.systemPrompt,
-              candidate.providerId === 'google' ? '' : fallbackWebContext
+              candidate.providerId === 'google' ? '' : fallbackWebContext,
             ].filter(Boolean).join('\n\n');
 
             const documentTextAppendix = formatDocumentsForPrompt(currentAttachments, {
               skipNativePdf: candidate.providerId === 'google',
             });
-            const userEffectiveContent = (message || 'Please review the attached content.') + documentTextAppendix;
+            const userEffectiveContent = (userMessage || 'Please review the attached content.') + documentTextAppendix;
 
-            const chatMessages: any[] = [];
-            if (Array.isArray(history)) {
-              for (const h of history) {
-                chatMessages.push({
-                  role: h.role === 'assistant' ? 'assistant' : 'user',
-                  content: h.content || '',
-                });
-              }
-            }
+            const chatMessages: any[] = safeHistory.map((item) => ({
+              role: item.role,
+              content: item.content,
+            }));
             chatMessages.push({
               role: 'user',
               content: userEffectiveContent,
               attachments: candidate.providerId === 'google' ? [] : currentAttachments,
             });
 
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify({
-                type: 'meta',
-                modelName: candidate.name,
-                failoverUsed: failoverHappened,
-                webSearchActive: !!webSearch
-              })}\n\n`)
-            );
+            if (!emit({
+              type: 'meta',
+              modelName: candidate.name,
+              failoverUsed: failoverHappened,
+              webSearchActive: webSearchEnabled,
+            })) {
+              break;
+            }
 
             let responseSources: SearchResult[] = candidate.providerId === 'google' ? [] : fallbackWebSources;
 
             if (candidate.providerId === 'google') {
               const ai = new GoogleGenAI({ apiKey: candidate.apiKey });
+              const geminiConfig: any = { systemInstruction: combinedPrompt };
+              if (webSearchEnabled) geminiConfig.tools = [{ googleSearch: {} }];
 
-              const geminiConfig: any = {
-                systemInstruction: combinedPrompt,
-              };
-
-              if (webSearch) {
-                geminiConfig.tools = [{ googleSearch: {} }];
-              }
-
-              const geminiContents: any[] = [];
-              if (Array.isArray(history)) {
-                for (const h of history) {
-                  geminiContents.push({
-                    role: h.role === 'assistant' ? 'model' : 'user',
-                    parts: [{ text: h.content || '' }]
-                  });
-                }
-              }
+              const geminiContents: any[] = safeHistory.map((item) => ({
+                role: item.role === 'assistant' ? 'model' : 'user',
+                parts: [{ text: item.content }],
+              }));
 
               const userParts: any[] = [];
               for (const attachment of currentAttachments) {
                 if (!isGeminiNativeAttachment(attachment)) continue;
-
-                if (attachment.name) {
-                  userParts.push({ text: `Attached file: ${attachment.name}` });
-                }
+                if (attachment.name) userParts.push({ text: `Attached file: ${attachment.name}` });
                 userParts.push({
                   inlineData: {
                     mimeType: attachment.type || (isPdfAttachment(attachment) ? 'application/pdf' : 'application/octet-stream'),
                     data: normalizeAttachmentBase64(attachment.data),
-                  }
+                  },
                 });
               }
               userParts.push({ text: userEffectiveContent });
-
-              geminiContents.push({
-                role: 'user',
-                parts: userParts
-              });
+              geminiContents.push({ role: 'user', parts: userParts });
 
               const geminiRes = await withTimeout(
                 ai.models.generateContentStream({
@@ -199,23 +224,23 @@ export async function POST(req: NextRequest) {
               );
 
               const groundedSources = new Map<string, SearchResult>();
+              for await (const chunk of withStreamTimeout(geminiRes, {
+                firstChunkMs: PROVIDER_FIRST_RESPONSE_TIMEOUT_MS,
+                idleChunkMs: PROVIDER_IDLE_TIMEOUT_MS,
+                totalMs: PROVIDER_TOTAL_TIMEOUT_MS,
+                label: candidate.name,
+              })) {
+                if (isCancelled()) throw new Error('CLIENT_ABORTED');
 
-              for await (const chunk of withFirstChunkTimeout(
-                geminiRes,
-                PROVIDER_FIRST_RESPONSE_TIMEOUT_MS,
-                candidate.name,
-              )) {
                 const text = chunk.text;
                 if (text) {
                   if (firstTokenAt === null) firstTokenAt = Date.now();
                   totalOutputChars += text.length;
                   candidateOutputChars += text.length;
-                  controller.enqueue(
-                    encoder.encode(`data: ${JSON.stringify({ type: 'delta', text })}\n\n`)
-                  );
+                  if (!emit({ type: 'delta', text })) throw new Error('CLIENT_ABORTED');
                 }
 
-                if (webSearch) {
+                if (webSearchEnabled) {
                   const groundingChunks = (chunk as any).candidates?.[0]?.groundingMetadata?.groundingChunks;
                   if (Array.isArray(groundingChunks)) {
                     for (const groundingChunk of groundingChunks) {
@@ -238,76 +263,91 @@ export async function POST(req: NextRequest) {
                 candidate.apiKey,
                 candidate.modelId,
                 chatMessages,
-                combinedPrompt
+                combinedPrompt,
+                undefined,
+                req.signal,
               );
 
-              for await (const deltaText of withFirstChunkTimeout(
-                streamGen,
-                PROVIDER_FIRST_RESPONSE_TIMEOUT_MS,
-                candidate.name,
-              )) {
+              for await (const deltaText of withStreamTimeout(streamGen, {
+                firstChunkMs: PROVIDER_FIRST_RESPONSE_TIMEOUT_MS,
+                idleChunkMs: PROVIDER_IDLE_TIMEOUT_MS,
+                totalMs: PROVIDER_TOTAL_TIMEOUT_MS,
+                label: candidate.name,
+              })) {
+                if (isCancelled()) throw new Error('CLIENT_ABORTED');
                 if (firstTokenAt === null) firstTokenAt = Date.now();
                 totalOutputChars += deltaText.length;
                 candidateOutputChars += deltaText.length;
-                controller.enqueue(
-                  encoder.encode(`data: ${JSON.stringify({ type: 'delta', text: deltaText })}\n\n`)
-                );
+                if (!emit({ type: 'delta', text: deltaText })) throw new Error('CLIENT_ABORTED');
               }
             }
 
-            if (webSearch) {
+            if (webSearchEnabled && !isCancelled()) {
               const sourceAppendix = formatSourceAppendix(responseSources);
               if (sourceAppendix) {
                 totalOutputChars += sourceAppendix.length;
                 candidateOutputChars += sourceAppendix.length;
-                controller.enqueue(
-                  encoder.encode(`data: ${JSON.stringify({ type: 'delta', text: sourceAppendix })}\n\n`)
-                );
+                if (!emit({ type: 'delta', text: sourceAppendix })) throw new Error('CLIENT_ABORTED');
               }
             }
 
             const learnedLatencyMs = (firstTokenAt ?? Date.now()) - candidateStartedAt;
-            await recordRuntimeModelSuccess(candidate.connectionId, learnedLatencyMs);
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`));
+            await withTimeout(
+              recordRuntimeModelSuccess(candidate.connectionId, learnedLatencyMs),
+              RUNTIME_HEALTH_WRITE_TIMEOUT_MS,
+              'Runtime health update',
+            ).catch(() => undefined);
+
+            if (!isCancelled()) emit({ type: 'done' });
             executionSucceeded = true;
 
-            logUsageEvent({
-              modelOrAlias: requestedModel,
-              executedModelName: candidate.name,
-              executedModelId: candidate.modelId,
-              connectionId: candidate.connectionId,
-              provider: candidate.providerId,
-              promptLength: (message || '').length,
-              responseLength: totalOutputChars,
-              durationMs: Date.now() - startTime,
-              failoverUsed: failoverHappened,
-              isPublic: true,
-              status: 'success',
-            });
-
+            if (!isCancelled()) {
+              logUsageEvent({
+                modelOrAlias: requestedModel,
+                executedModelName: candidate.name,
+                executedModelId: candidate.modelId,
+                connectionId: candidate.connectionId,
+                provider: candidate.providerId,
+                promptLength: userMessage.length,
+                responseLength: totalOutputChars,
+                durationMs: Date.now() - startTime,
+                failoverUsed: failoverHappened,
+                isPublic: true,
+                status: 'success',
+              });
+            }
             break;
-          } catch (err: any) {
-            await recordRuntimeModelFailure(candidate.connectionId, err);
-            console.warn(`[Stream Failover] Error on ${candidate.name} (${candidate.modelId}):`, err.message);
+          } catch (error) {
+            if (isCancelled() || isClientAbort(error)) {
+              streamCancelled = true;
+              break;
+            }
+
+            await withTimeout(
+              recordRuntimeModelFailure(candidate.connectionId, error),
+              RUNTIME_HEALTH_WRITE_TIMEOUT_MS,
+              'Runtime health update',
+            ).catch(() => undefined);
+
+            const message = error instanceof Error ? error.message : String(error || 'Unknown stream error');
+            console.warn(`[Stream Failover] Error on ${candidate.name} (${candidate.modelId}):`, message);
 
             if (candidateOutputChars > 0) {
-              controller.enqueue(
-                encoder.encode(`data: ${JSON.stringify({
-                  type: 'error',
-                  error: 'The active model stopped mid-response. Please retry so AbhiAI can choose another healthy model.'
-                })}\n\n`)
-              );
+              emit({
+                type: 'error',
+                error: 'The active model stopped mid-response. Please retry so AbhiAI can choose another healthy model.',
+              });
               executionSucceeded = true;
               break;
             }
           }
         }
 
-        if (!executionSucceeded) {
+        if (!executionSucceeded && !isCancelled()) {
           logUsageEvent({
             modelOrAlias: requestedModel,
             provider: 'all-failed',
-            promptLength: (message || '').length,
+            promptLength: userMessage.length,
             responseLength: 0,
             durationMs: Date.now() - startTime,
             failoverUsed: true,
@@ -316,16 +356,21 @@ export async function POST(req: NextRequest) {
             errorCode: 'ALL_CANDIDATES_FAILED',
           });
 
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify({
-              type: 'error',
-              error: 'AbhiAI is temporarily unable to complete this request. Please try again shortly.'
-            })}\n\n`)
-          );
+          emit({
+            type: 'error',
+            error: 'AbhiAI is temporarily unable to complete this request. Please try again shortly.',
+          });
         }
 
-        controller.close();
-      }
+        try {
+          controller.close();
+        } catch {
+          // Client may already have disconnected.
+        }
+      },
+      cancel() {
+        streamCancelled = true;
+      },
     });
 
     return new Response(stream, {
@@ -333,14 +378,18 @@ export async function POST(req: NextRequest) {
         'Content-Type': 'text/event-stream; charset=utf-8',
         'Cache-Control': 'no-cache, no-transform',
         'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no',
       },
     });
+  } catch (error) {
+    if (req.signal.aborted || isClientAbort(error)) {
+      return new Response(null, { status: 499 });
+    }
 
-  } catch (error: any) {
     console.error("Stream Gateway Error:", error);
     return new Response(JSON.stringify({ error: "Internal Server Error" }), {
       status: 500,
-      headers: { "Content-Type": "application/json" }
+      headers: { "Content-Type": "application/json" },
     });
   }
 }

@@ -13,7 +13,7 @@ export function diagnoseAIError(errorString: string, statusCode?: number): Error
       code: 401,
       userTitle: 'API Key Invalid or Expired',
       userMessage: 'The API key provided for this provider is either invalid, revoked, or has expired.',
-      recommendedAction: 'Go to Admin Connections, click Edit on this provider, and paste a fresh API key.'
+      recommendedAction: 'Open Admin > Integrations, choose this provider, and save a fresh API key.',
     };
   }
 
@@ -22,7 +22,7 @@ export function diagnoseAIError(errorString: string, statusCode?: number): Error
       code: 403,
       userTitle: 'Model Permission Denied',
       userMessage: 'Your API key does not have access or permissions to invoke this specific model ID.',
-      recommendedAction: 'Check if you have accepted the model terms in provider catalog or switch to an alternate model.'
+      recommendedAction: 'Check the provider model permissions or switch to another healthy model in Smart Routing.',
     };
   }
 
@@ -31,7 +31,7 @@ export function diagnoseAIError(errorString: string, statusCode?: number): Error
       code: 429,
       userTitle: 'Free Rate Limit Reached',
       userMessage: 'The provider temporarily limited requests because the free quota or RPM limit was reached.',
-      recommendedAction: 'AbhiAI smart failover will automatically use your backup model. You can also wait 60 seconds.'
+      recommendedAction: 'AbhiAI Smart Routing will temporarily cool this model and prefer another healthy model.',
     };
   }
 
@@ -40,7 +40,7 @@ export function diagnoseAIError(errorString: string, statusCode?: number): Error
       code: 404,
       userTitle: 'Model or Endpoint Not Found',
       userMessage: 'The requested model ID or API Base URL does not exist on this provider server.',
-      recommendedAction: 'Use the Quick Provider Wizard to auto-discover and import currently active models.'
+      recommendedAction: 'Open Admin > Integrations and rediscover the provider models or verify the Base URL.',
     };
   }
 
@@ -48,8 +48,8 @@ export function diagnoseAIError(errorString: string, statusCode?: number): Error
     return {
       code: 'TIMEOUT',
       userTitle: 'Provider Response Timeout',
-      userMessage: 'The upstream AI provider took too long to generate a reply (>60s).',
-      recommendedAction: 'Check provider server status or configure a faster fallback model in AbhiAI.'
+      userMessage: 'The upstream AI provider did not respond within AbhiAI’s safe response window.',
+      recommendedAction: 'Check provider health or keep multiple healthy models in the Smart Routing pool.',
     };
   }
 
@@ -57,6 +57,6 @@ export function diagnoseAIError(errorString: string, statusCode?: number): Error
     code: 'UNKNOWN',
     userTitle: 'Provider Connection Issue',
     userMessage: errorString || 'An unexpected error occurred while communicating with the AI service.',
-    recommendedAction: 'Test connection in Admin Connections or check your internet connection.'
+    recommendedAction: 'Check Admin > Integrations and Health, then test the provider again.',
   };
 }

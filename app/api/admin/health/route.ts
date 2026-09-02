@@ -1,8 +1,15 @@
 import { NextResponse } from 'next/server';
+import type { AIConnection } from '@/lib/connections';
 import { listConnections, listRuntimeConnections } from '@/lib/data/ai-config';
 import { getProviderAdapter } from '@/lib/ai/providers/registry';
 import { diagnoseAIError } from '@/lib/ai/error-doctor';
 import { classifyModelBilling } from '@/lib/ai/free-guard';
+import { withTimeout } from '@/lib/ai/timeout';
+
+export const maxDuration = 60;
+
+const HEALTH_DATA_TIMEOUT_MS = 8_000;
+const PROVIDER_HEALTH_TIMEOUT_MS = 12_000;
 
 interface ProviderHealthResult {
   status: 'HEALTHY' | 'DEGRADED' | 'RATE_LIMITED' | 'AUTH_ERROR' | 'OFFLINE' | 'CONFIG_ERROR';
@@ -20,6 +27,8 @@ function providerIdFor(connection: { providerId?: string; baseUrl: string; model
   if (baseUrl.includes('openrouter')) return 'openrouter';
   if (baseUrl.includes('groq')) return 'groq';
   if (baseUrl.includes('together')) return 'together';
+  if (baseUrl.includes('cerebras')) return 'cerebras';
+  if (baseUrl.includes('sambanova')) return 'sambanova';
   return 'openai-compatible';
 }
 
@@ -29,10 +38,21 @@ function isSafeRuntimeModel(connection: { providerId?: string; baseUrl: string; 
 }
 
 export async function GET() {
-  const [configuredConnections, runtimeConnections] = await Promise.all([
-    listConnections(),
-    listRuntimeConnections(),
-  ]);
+  let configuredConnections: AIConnection[];
+  let runtimeConnections: AIConnection[];
+
+  try {
+    [configuredConnections, runtimeConnections] = await withTimeout(
+      Promise.all([listConnections(), listRuntimeConnections()]),
+      HEALTH_DATA_TIMEOUT_MS,
+      'Health configuration load',
+    );
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Could not load AI health configuration.' },
+      { status: 503 },
+    );
+  }
 
   const activeConfigured = configuredConnections.filter(
     (connection) => connection.isActive && isSafeRuntimeModel(connection),
@@ -51,13 +71,13 @@ export async function GET() {
           modelId: configured.modelId,
           provider: providerIdFor(configured),
           scope: configured.scope,
-          status: 'CONFIG_ERROR',
+          status: 'CONFIG_ERROR' as const,
           latencyMs: 0,
           diagnosis: {
             code: 'CONFIG_ERROR',
             userTitle: 'API Key Missing',
             userMessage: 'This active model does not have an active provider API key available to the runtime.',
-            recommendedAction: 'Open Admin > Providers and save or reactivate the provider API key.',
+            recommendedAction: 'Open Admin > Integrations and save or reactivate the provider API key.',
           },
           lastChecked: new Date().toISOString(),
         };
@@ -70,13 +90,13 @@ export async function GET() {
           modelId: configured.modelId,
           provider: providerIdFor(configured),
           scope: configured.scope,
-          status: 'CONFIG_ERROR',
+          status: 'CONFIG_ERROR' as const,
           latencyMs: 0,
           diagnosis: {
             code: 'RUNTIME_BLOCKED',
             userTitle: 'Model Not Runtime Eligible',
             userMessage: 'The model is configured but is currently excluded from the safe AbhiAI runtime.',
-            recommendedAction: 'Check Admin > Models and Providers. Only active, Free Guard approved models with an active provider are used.',
+            recommendedAction: 'Check Admin > Models and Integrations. Only active, Free Guard approved models with an active provider are used.',
           },
           lastChecked: new Date().toISOString(),
         };
@@ -94,21 +114,25 @@ export async function GET() {
             const adapter = getProviderAdapter(providerId, runtime.baseUrl);
             if (!adapter) {
               return {
-                status: 'CONFIG_ERROR',
+                status: 'CONFIG_ERROR' as const,
                 latencyMs: 0,
                 diagnosis: {
                   code: 'CONFIG_ERROR',
                   userTitle: 'Provider Adapter Missing',
                   userMessage: 'AbhiAI could not resolve a compatible provider adapter for this connection.',
-                  recommendedAction: 'Review the provider configuration in Admin > Providers.',
+                  recommendedAction: 'Review the provider configuration in Admin > Integrations.',
                 },
                 lastChecked,
               };
             }
 
-            const isOk = await adapter.testConnection(runtime.apiKey);
+            const isOk = await withTimeout(
+              adapter.testConnection(runtime.apiKey),
+              PROVIDER_HEALTH_TIMEOUT_MS,
+              `${runtime.name} health check`,
+            );
             return {
-              status: isOk ? 'HEALTHY' : 'DEGRADED',
+              status: isOk ? 'HEALTHY' as const : 'DEGRADED' as const,
               latencyMs: Date.now() - startedAt,
               lastChecked,
             };
@@ -116,10 +140,12 @@ export async function GET() {
             const message = error instanceof Error ? error.message : String(error || 'Provider health check failed');
             const diagnosis = diagnoseAIError(message);
             const status = diagnosis.code === 401
-              ? 'AUTH_ERROR'
+              ? 'AUTH_ERROR' as const
               : diagnosis.code === 429
-                ? 'RATE_LIMITED'
-                : 'OFFLINE';
+                ? 'RATE_LIMITED' as const
+                : diagnosis.code === 'TIMEOUT'
+                  ? 'DEGRADED' as const
+                  : 'OFFLINE' as const;
 
             return {
               status,

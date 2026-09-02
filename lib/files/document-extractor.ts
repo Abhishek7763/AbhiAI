@@ -19,6 +19,7 @@ export interface ExtractedDocument {
 }
 
 const MAX_DOC_CHARS = 30000;
+const MAX_INLINE_ATTACHMENTS = 4;
 export const MAX_INLINE_ATTACHMENT_BYTES = 2_800_000;
 
 function lowerName(name: string) {
@@ -53,6 +54,10 @@ export function estimateAttachmentBytes(file: Pick<AttachmentPayload, 'data'>) {
 
 export function validateInlineAttachments(attachments: AttachmentPayload[] | undefined) {
   if (!Array.isArray(attachments) || attachments.length === 0) return null;
+
+  if (attachments.length > MAX_INLINE_ATTACHMENTS) {
+    return `Too many attachments in one message. Attach up to ${MAX_INLINE_ATTACHMENTS} files at a time.`;
+  }
 
   const totalBytes = attachments.reduce((sum, attachment) => sum + estimateAttachmentBytes(attachment), 0);
   if (totalBytes > MAX_INLINE_ATTACHMENT_BYTES) {

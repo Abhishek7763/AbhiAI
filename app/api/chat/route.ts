@@ -5,6 +5,7 @@ import { getProviderAdapter } from "@/lib/ai/providers/registry";
 import { logUsageEvent } from "@/lib/usage-logger";
 import { recordRuntimeModelFailure, recordRuntimeModelSuccess } from "@/lib/ai/runtime-health";
 import { withTimeout } from "@/lib/ai/timeout";
+import { sanitizeChatHistory, validateChatRequestSize, validateUserMessage } from "@/lib/ai/chat-input";
 import {
   formatDocumentsForPrompt,
   isGeminiNativeAttachment,
@@ -12,18 +13,44 @@ import {
   type AttachmentPayload,
 } from "@/lib/files/document-extractor";
 
-const PROVIDER_TIMEOUT_MS = 45_000;
+export const maxDuration = 180;
+
+const PROVIDER_TIMEOUT_MS = 35_000;
+const RUNTIME_HEALTH_WRITE_TIMEOUT_MS = 2_500;
+
+function isClientAbort(error: unknown) {
+  return error instanceof Error && error.message === 'CLIENT_ABORTED';
+}
 
 export async function POST(req: Request) {
   const startTime = Date.now();
   let requestedModel = 'default';
 
+  const sizeError = validateChatRequestSize(req.headers.get('content-length'));
+  if (sizeError) {
+    return NextResponse.json({ error: sizeError }, { status: 413 });
+  }
+
   try {
     const { message, history, modelId, attachments } = await req.json();
-    const currentAttachments: AttachmentPayload[] = Array.isArray(attachments) ? attachments : [];
-    requestedModel = modelId || 'default';
+    const userMessage = typeof message === 'string' ? message : '';
+    const messageError = validateUserMessage(message);
+    if (messageError) {
+      return NextResponse.json({ error: messageError }, { status: 400 });
+    }
 
-    if (!message && currentAttachments.length === 0) {
+    const currentAttachments: AttachmentPayload[] = Array.isArray(attachments)
+      ? attachments.filter((attachment: unknown): attachment is AttachmentPayload => Boolean(
+          attachment &&
+          typeof (attachment as AttachmentPayload).name === 'string' &&
+          typeof (attachment as AttachmentPayload).type === 'string' &&
+          typeof (attachment as AttachmentPayload).data === 'string',
+        ))
+      : [];
+    const safeHistory = sanitizeChatHistory(history);
+    requestedModel = typeof modelId === 'string' && modelId ? modelId : 'default';
+
+    if (!userMessage && currentAttachments.length === 0) {
       return NextResponse.json({ error: "Message or attachment is required" }, { status: 400 });
     }
 
@@ -33,40 +60,36 @@ export async function POST(req: Request) {
     }
 
     const requiresNativeMultimodal = currentAttachments.some((attachment) => isGeminiNativeAttachment(attachment));
-    const routePlan = await resolveRoutePlan(requestedModel, requiresNativeMultimodal, message || '');
+    const routePlan = await resolveRoutePlan(requestedModel, requiresNativeMultimodal, userMessage);
 
     if (!routePlan.primary) {
       return NextResponse.json(
-        { error: "No usable AI model is configured for this request. Open Admin > Providers and Smart Routing." },
-        { status: 503 }
+        { error: "No usable AI model is configured for this request. Open Admin > Integrations and Smart Routing." },
+        { status: 503 },
       );
     }
 
     const globalInstructions = getInstructions().systemPrompt || 'You are AbhiAI, an intelligent assistant created by Abhishek.';
     const executionChain: RouteCandidate[] = [routePlan.primary, ...routePlan.fallbacks];
 
-    let lastError: string | null = null;
     let successfulReply: string | null = null;
     let executedCandidate: RouteCandidate | null = null;
 
     for (const candidate of executionChain) {
+      if (req.signal.aborted) break;
       const candidateStartedAt = Date.now();
+
       try {
         const combinedPrompt = [globalInstructions, candidate.systemPrompt].filter(Boolean).join('\n\n');
         const documentTextAppendix = formatDocumentsForPrompt(currentAttachments, {
           skipNativePdf: candidate.providerId === 'google',
         });
-        const userEffectiveContent = (message || 'Please review the attached content.') + documentTextAppendix;
+        const userEffectiveContent = (userMessage || 'Please review the attached content.') + documentTextAppendix;
 
-        const chatMessages: any[] = [];
-        if (Array.isArray(history)) {
-          for (const h of history) {
-            chatMessages.push({
-              role: h.role === 'assistant' ? 'assistant' : 'user',
-              content: h.content || '',
-            });
-          }
-        }
+        const chatMessages: any[] = safeHistory.map((item) => ({
+          role: item.role,
+          content: item.content,
+        }));
 
         const candidateAttachments = candidate.providerId === 'google'
           ? currentAttachments.filter((attachment) => isGeminiNativeAttachment(attachment))
@@ -87,27 +110,39 @@ export async function POST(req: Request) {
         }
 
         const reply = await withTimeout(
-          adapter.chat(
-            candidate.apiKey,
-            candidate.modelId,
-            chatMessages,
-            combinedPrompt
-          ),
+          adapter.chat(candidate.apiKey, candidate.modelId, chatMessages, combinedPrompt),
           PROVIDER_TIMEOUT_MS,
           candidate.name,
         );
 
+        if (req.signal.aborted) throw new Error('CLIENT_ABORTED');
+
         if (reply) {
-          await recordRuntimeModelSuccess(candidate.connectionId, Date.now() - candidateStartedAt);
+          await withTimeout(
+            recordRuntimeModelSuccess(candidate.connectionId, Date.now() - candidateStartedAt),
+            RUNTIME_HEALTH_WRITE_TIMEOUT_MS,
+            'Runtime health update',
+          ).catch(() => undefined);
           successfulReply = reply;
           executedCandidate = candidate;
           break;
         }
-      } catch (err: any) {
-        await recordRuntimeModelFailure(candidate.connectionId, err);
-        console.warn(`[Failover] Execution failed on ${candidate.name} (${candidate.modelId}):`, err.message);
-        lastError = err.message;
+      } catch (error) {
+        if (req.signal.aborted || isClientAbort(error)) break;
+
+        await withTimeout(
+          recordRuntimeModelFailure(candidate.connectionId, error),
+          RUNTIME_HEALTH_WRITE_TIMEOUT_MS,
+          'Runtime health update',
+        ).catch(() => undefined);
+
+        const message = error instanceof Error ? error.message : String(error || 'Unknown provider error');
+        console.warn(`[Failover] Execution failed on ${candidate.name} (${candidate.modelId}):`, message);
       }
+    }
+
+    if (req.signal.aborted) {
+      return new Response(null, { status: 499 });
     }
 
     if (successfulReply && executedCandidate) {
@@ -118,7 +153,7 @@ export async function POST(req: Request) {
         executedModelId: executedCandidate.modelId,
         connectionId: executedCandidate.connectionId,
         provider: executedCandidate.providerId,
-        promptLength: (message || '').length,
+        promptLength: userMessage.length,
         responseLength: successfulReply.length,
         durationMs: Date.now() - startTime,
         failoverUsed,
@@ -129,14 +164,14 @@ export async function POST(req: Request) {
       return NextResponse.json({
         reply: successfulReply,
         model: executedCandidate.name,
-        failoverUsed
+        failoverUsed,
       });
     }
 
     logUsageEvent({
       modelOrAlias: requestedModel,
       provider: 'all-failed',
-      promptLength: (message || '').length,
+      promptLength: userMessage.length,
       responseLength: 0,
       durationMs: Date.now() - startTime,
       failoverUsed: true,
@@ -145,16 +180,19 @@ export async function POST(req: Request) {
       errorCode: 'ALL_CANDIDATES_FAILED',
     });
 
-    return NextResponse.json({
-      error: "AbhiAI is temporarily unable to complete this request. Please try again shortly.",
-      debug: lastError
-    }, { status: 502 });
+    return NextResponse.json(
+      { error: "AbhiAI is temporarily unable to complete this request. Please try again shortly." },
+      { status: 502 },
+    );
+  } catch (error) {
+    if (req.signal.aborted || isClientAbort(error)) {
+      return new Response(null, { status: 499 });
+    }
 
-  } catch (error: any) {
     console.error("Chat Gateway Error:", error);
     return NextResponse.json(
       { error: "Internal Server Error in AbhiAI Chat Gateway" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

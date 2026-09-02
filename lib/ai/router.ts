@@ -3,6 +3,7 @@ import { listRuntimeConnections } from '@/lib/data/ai-config';
 import { getRoutingConfig, type RoutingConfig } from '@/lib/data/routing-config';
 import { getAbhiAIModeInstruction } from '@/lib/ai/modes';
 import { listRuntimeRoutingSignals, type RuntimeRoutingSignal } from '@/lib/ai/runtime-health';
+import { withTimeout } from '@/lib/ai/timeout';
 
 export interface RouteCandidate {
   connectionId: string;
@@ -32,7 +33,8 @@ type ScoredConnection = {
   score: number;
 };
 
-const MAX_CANDIDATES_PER_REQUEST = 6;
+const MAX_CANDIDATES_PER_REQUEST = 4;
+const ROUTING_CONFIG_TIMEOUT_MS = 7_000;
 
 function toCandidate(connection: AIConnection, isPrimary = false): RouteCandidate {
   const modeInstruction = getAbhiAIModeInstruction({
@@ -224,11 +226,15 @@ export async function resolveRoutePlan(
   requiresMultimodal: boolean = false,
   requestText: string = '',
 ): Promise<SmartRoutePlan> {
-  const [runtimeConnections, routingConfig, routingSignals] = await Promise.all([
-    listRuntimeConnections(),
-    getRoutingConfig(),
-    listRuntimeRoutingSignals(),
-  ]);
+  const [runtimeConnections, routingConfig, routingSignals] = await withTimeout(
+    Promise.all([
+      listRuntimeConnections(),
+      getRoutingConfig(),
+      listRuntimeRoutingSignals(),
+    ]),
+    ROUTING_CONFIG_TIMEOUT_MS,
+    'AbhiAI routing configuration',
+  );
 
   const signalById = new Map(routingSignals.map((signal) => [signal.id, signal]));
   const now = Date.now();

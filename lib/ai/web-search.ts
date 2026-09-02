@@ -9,15 +9,17 @@ export interface SearchResult {
   snippet: string;
 }
 
+const WEB_SEARCH_TIMEOUT_MS = 8_000;
+
 export async function fetchWebGroundingContext(query: string): Promise<{ contextText: string; sources: SearchResult[] }> {
   try {
     const encodedQuery = encodeURIComponent(query.slice(0, 200));
-    // DuckDuckGo Instant Answer API / HTML Lite query
     const res = await fetch(`https://api.duckduckgo.com/?q=${encodedQuery}&format=json&no_html=1&skip_disambig=1`, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       },
-      next: { revalidate: 3600 }
+      signal: AbortSignal.timeout(WEB_SEARCH_TIMEOUT_MS),
+      next: { revalidate: 300 },
     });
 
     if (!res.ok) {
@@ -34,7 +36,7 @@ export async function fetchWebGroundingContext(query: string): Promise<{ context
         sources.push({
           title: data.Heading || 'DuckDuckGo Knowledge',
           url: data.AbstractURL,
-          snippet: data.AbstractText
+          snippet: data.AbstractText,
         });
       }
     }
@@ -44,9 +46,9 @@ export async function fetchWebGroundingContext(query: string): Promise<{ context
         if (topic.Text && topic.FirstURL) {
           snippets.push(topic.Text);
           sources.push({
-            title: topic.Text.slice(0, 50) + '...',
+            title: `${topic.Text.slice(0, 50)}...`,
             url: topic.FirstURL,
-            snippet: topic.Text
+            snippet: topic.Text,
           });
         }
       }
@@ -56,13 +58,14 @@ export async function fetchWebGroundingContext(query: string): Promise<{ context
       return { contextText: '', sources: [] };
     }
 
-    const contextText = `[REAL-TIME WEB SEARCH RESULTS FOR: "${query}"]\n` + 
-      snippets.map((s, idx) => `[Source ${idx + 1}]: ${s}`).join('\n') + 
-      `\n\nInstructions: Integrate the relevant facts from the real-time search above into your answer naturally.`;
+    const contextText = `[REAL-TIME WEB SEARCH RESULTS FOR: "${query}"]\n`
+      + snippets.map((snippet, index) => `[Source ${index + 1}]: ${snippet}`).join('\n')
+      + '\n\nInstructions: Integrate the relevant facts from the real-time search above into your answer naturally.';
 
     return { contextText, sources };
   } catch (error) {
-    console.warn('Web search grounding error:', error);
+    const isTimeout = error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError');
+    console.warn(isTimeout ? 'Web search grounding timed out.' : 'Web search grounding error:', isTimeout ? undefined : error);
     return { contextText: '', sources: [] };
   }
 }
