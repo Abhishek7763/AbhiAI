@@ -28,6 +28,7 @@ interface ChatBackupPayload {
 const SESSIONS_KEY = "abhiai_sessions";
 const CURRENT_SESSION_KEY = "abhiai_current_session";
 const MODEL_CHANGED_EVENT = "abhiai:model-changed";
+export const CHAT_BACKUP_IMPORT_EVENT = "abhiai:chat-backup-import";
 const PERSIST_DELAY_MS = 180;
 
 function sortSessions(items: ChatSession[]) {
@@ -36,6 +37,17 @@ function sortSessions(items: ChatSession[]) {
     if (!a.isPinned && b.isPinned) return 1;
     return b.updatedAt - a.updatedAt;
   });
+}
+
+function mergeSessions(previous: ChatSession[], imported: ChatSession[]) {
+  const merged = new Map(previous.map((session) => [session.id, session]));
+  for (const session of imported) {
+    const existing = merged.get(session.id);
+    if (!existing || session.updatedAt >= existing.updatedAt) {
+      merged.set(session.id, session);
+    }
+  }
+  return sortSessions(Array.from(merged.values()));
 }
 
 function readLegacySessions(): ChatSession[] {
@@ -97,7 +109,18 @@ function toStoredSessions(items: ChatSession[]): StoredChatSession[] {
   }));
 }
 
-function parseBackup(raw: string): ChatSession[] {
+export function createLocalChatBackup(items: ChatSession[]) {
+  const payload: ChatBackupPayload = {
+    app: "AbhiAI",
+    type: "local-chat-backup",
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    sessions: items,
+  };
+  return JSON.stringify(payload, null, 2);
+}
+
+export function parseLocalChatBackup(raw: string): ChatSession[] {
   const parsed = JSON.parse(raw) as Partial<ChatBackupPayload>;
   if (
     parsed?.app !== "AbhiAI" ||
@@ -233,6 +256,17 @@ export function useChatHistory() {
     return () => window.removeEventListener(MODEL_CHANGED_EVENT, handleModelChanged);
   }, []);
 
+  useEffect(() => {
+    const handleBackupImport = (event: Event) => {
+      const imported = (event as CustomEvent<ChatSession[]>).detail;
+      if (!Array.isArray(imported)) return;
+      setSessions((previous) => mergeSessions(previous, imported));
+    };
+
+    window.addEventListener(CHAT_BACKUP_IMPORT_EVENT, handleBackupImport);
+    return () => window.removeEventListener(CHAT_BACKUP_IMPORT_EVENT, handleBackupImport);
+  }, []);
+
   const createSession = (initialTitle?: string, initialMessages: Message[] = []) => {
     const titleMessage = initialMessages.find((message) => message.role === "user");
     const derivedTitle = titleMessage
@@ -308,29 +342,11 @@ export function useChatHistory() {
     setCurrentSessionId(null);
   };
 
-  const exportBackup = () => {
-    const payload: ChatBackupPayload = {
-      app: "AbhiAI",
-      type: "local-chat-backup",
-      version: 1,
-      exportedAt: new Date().toISOString(),
-      sessions,
-    };
-    return JSON.stringify(payload, null, 2);
-  };
+  const exportBackup = () => createLocalChatBackup(sessions);
 
   const importBackup = (raw: string) => {
-    const imported = parseBackup(raw);
-    commitSessions((previous) => {
-      const merged = new Map(previous.map((session) => [session.id, session]));
-      for (const session of imported) {
-        const existing = merged.get(session.id);
-        if (!existing || session.updatedAt >= existing.updatedAt) {
-          merged.set(session.id, session);
-        }
-      }
-      return sortSessions(Array.from(merged.values()));
-    });
+    const imported = parseLocalChatBackup(raw);
+    commitSessions((previous) => mergeSessions(previous, imported));
     return imported.length;
   };
 
