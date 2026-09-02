@@ -37,16 +37,23 @@ function toCandidate(connection: AIConnection, isPrimary = false): RouteCandidat
  */
 export async function resolveRoutePlan(
   requestedModelOrAlias: string,
-  requiresVision: boolean = false,
+  requiresMultimodal: boolean = false,
 ): Promise<SmartRoutePlan> {
   const runtimeConnections = await listRuntimeConnections();
   const allConnections = runtimeConnections.filter((connection) => connection.isActive && connection.apiKey);
 
-  if (allConnections.length === 0) {
+  // Native image/PDF input currently routes only through Google Gemini. Keeping
+  // the compatibility decision here prevents an incompatible requested model
+  // from becoming primary while only the fallbacks are filtered.
+  const compatibleConnections = requiresMultimodal
+    ? allConnections.filter((connection) => connection.providerId === 'google')
+    : allConnections;
+
+  if (compatibleConnections.length === 0) {
     return { primary: null, fallbacks: [] };
   }
 
-  let primaryConn = allConnections.find(
+  let primaryConn = compatibleConnections.find(
     (connection) =>
       connection.id === requestedModelOrAlias ||
       connection.assignedAlias === requestedModelOrAlias ||
@@ -54,25 +61,17 @@ export async function resolveRoutePlan(
       connection.modelId === requestedModelOrAlias,
   );
 
-  // For the generic/default chat path, prefer the newest verified Gemini Flash model.
   if (!primaryConn && (requestedModelOrAlias === 'default' || !requestedModelOrAlias)) {
     primaryConn =
-      allConnections.find((connection) => connection.modelId === 'gemini-3.7-flash') ||
-      allConnections.find((connection) => connection.modelId === 'gemini-3.6-flash') ||
-      allConnections.find((connection) => connection.modelId === 'gemini-3.5-flash-lite') ||
-      allConnections[0];
+      compatibleConnections.find((connection) => connection.modelId === 'gemini-3.7-flash') ||
+      compatibleConnections.find((connection) => connection.modelId === 'gemini-3.6-flash') ||
+      compatibleConnections.find((connection) => connection.modelId === 'gemini-3.5-flash-lite') ||
+      compatibleConnections[0];
   }
 
   if (!primaryConn) {
-    primaryConn = allConnections[0];
+    primaryConn = compatibleConnections[0];
   }
-
-  // Vision capability filtering is intentionally conservative for now: imported
-  // Gemini Flash models remain eligible while model capability persistence is
-  // completed in the next phase.
-  const compatibleConnections = requiresVision
-    ? allConnections.filter((connection) => connection.providerId === 'google')
-    : allConnections;
 
   const fallbacks = compatibleConnections
     .filter((connection) => connection.id !== primaryConn?.id)
