@@ -2,7 +2,7 @@ import 'server-only';
 
 import type { AIConnection } from '@/lib/connections';
 import { classifyModelBilling } from '@/lib/ai/free-guard';
-import { encryptApiKey } from '@/lib/security/api-key-crypto';
+import { decryptApiKey, encryptApiKey } from '@/lib/security/api-key-crypto';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 type ConnectionInput = Partial<AIConnection> & {
@@ -64,6 +64,37 @@ export async function upsertProvider(input: {
   }
 
   return provider;
+}
+
+export async function getStoredProviderApiKey(providerSlug: string): Promise<string | null> {
+  const supabase = createAdminClient();
+  const slug = slugify(providerSlug);
+
+  const { data: provider, error: providerError } = await supabase
+    .from('ai_providers')
+    .select('id')
+    .eq('slug', slug)
+    .maybeSingle();
+  throwIfError(providerError);
+  if (!provider) return null;
+
+  const { data: keyRow, error: keyError } = await supabase
+    .from('ai_api_keys')
+    .select('encrypted_key, encryption_iv, encryption_tag, encryption_version')
+    .eq('provider_id', provider.id)
+    .eq('status', 'active')
+    .order('priority', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  throwIfError(keyError);
+  if (!keyRow) return null;
+
+  return decryptApiKey({
+    encryptedKey: keyRow.encrypted_key,
+    iv: keyRow.encryption_iv,
+    tag: keyRow.encryption_tag,
+    version: keyRow.encryption_version,
+  });
 }
 
 export async function listProviders() {
