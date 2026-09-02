@@ -3,7 +3,7 @@ import { getInstructions } from "@/lib/instructions";
 import { resolveRoutePlan, RouteCandidate } from "@/lib/ai/router";
 import { streamOpenAICompatible } from "@/lib/ai/stream";
 import { logUsageEvent } from "@/lib/usage-logger";
-import { fetchWebGroundingContext } from "@/lib/ai/web-search";
+import { fetchWebGroundingContext, type SearchResult } from "@/lib/ai/web-search";
 import {
   formatDocumentsForPrompt,
   isGeminiNativeAttachment,
@@ -13,6 +13,29 @@ import {
   type AttachmentPayload,
 } from "@/lib/files/document-extractor";
 import { GoogleGenAI } from "@google/genai";
+
+function cleanSourceTitle(value: string | undefined, fallback: string) {
+  const cleaned = (value || '').replace(/[\[\]\n\r]/g, ' ').replace(/\s+/g, ' ').trim();
+  return cleaned || fallback;
+}
+
+function formatSourceAppendix(sources: SearchResult[]) {
+  const unique = new Map<string, SearchResult>();
+  for (const source of sources) {
+    if (!source.url || unique.has(source.url)) continue;
+    unique.set(source.url, source);
+  }
+
+  const visible = Array.from(unique.values()).slice(0, 8);
+  if (visible.length === 0) return '';
+
+  const lines = visible.map((source, index) => {
+    const title = cleanSourceTitle(source.title, `Source ${index + 1}`);
+    return `${index + 1}. [${title}](${source.url})`;
+  });
+
+  return `\n\n---\n**Web sources**\n${lines.join('\n')}`;
+}
 
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
@@ -50,20 +73,22 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    let webContext = '';
-    if (webSearch && message) {
-      const searchRes = await fetchWebGroundingContext(message);
-      if (searchRes.contextText) {
-        webContext = searchRes.contextText;
-      }
-    }
-
-    const globalInstructions = getInstructions().systemPrompt || 'You are AbhiAI, an intelligent assistant created by Abhishek.';
     const executionChain: RouteCandidate[] = [
       routePlan.primary,
       ...routePlan.fallbacks
     ];
 
+    // Google candidates use Gemini's native Google Search grounding. Only fetch
+    // the lightweight external fallback if a non-Google candidate may execute.
+    let fallbackWebContext = '';
+    let fallbackWebSources: SearchResult[] = [];
+    if (webSearch && message && executionChain.some((candidate) => candidate.providerId !== 'google')) {
+      const searchRes = await fetchWebGroundingContext(message);
+      fallbackWebContext = searchRes.contextText || '';
+      fallbackWebSources = searchRes.sources || [];
+    }
+
+    const globalInstructions = getInstructions().systemPrompt || 'You are AbhiAI, an intelligent assistant created by Abhishek.';
     const encoder = new TextEncoder();
 
     const stream = new ReadableStream({
@@ -83,10 +108,9 @@ export async function POST(req: NextRequest) {
             const combinedPrompt = [
               globalInstructions,
               candidate.systemPrompt,
-              webContext
+              candidate.providerId === 'google' ? '' : fallbackWebContext
             ].filter(Boolean).join('\n\n');
 
-            // Gemini receives PDFs natively. Other providers get the local text fallback.
             const documentTextAppendix = formatDocumentsForPrompt(currentAttachments, {
               skipNativePdf: candidate.providerId === 'google',
             });
@@ -115,6 +139,8 @@ export async function POST(req: NextRequest) {
                 webSearchActive: !!webSearch
               })}\n\n`)
             );
+
+            let responseSources: SearchResult[] = candidate.providerId === 'google' ? [] : fallbackWebSources;
 
             if (candidate.providerId === 'google') {
               const ai = new GoogleGenAI({ apiKey: candidate.apiKey });
@@ -164,6 +190,8 @@ export async function POST(req: NextRequest) {
                 config: geminiConfig,
               });
 
+              const groundedSources = new Map<string, SearchResult>();
+
               for await (const chunk of geminiRes) {
                 const text = chunk.text;
                 if (text) {
@@ -172,7 +200,24 @@ export async function POST(req: NextRequest) {
                     encoder.encode(`data: ${JSON.stringify({ type: 'delta', text })}\n\n`)
                   );
                 }
+
+                if (webSearch) {
+                  const groundingChunks = (chunk as any).candidates?.[0]?.groundingMetadata?.groundingChunks;
+                  if (Array.isArray(groundingChunks)) {
+                    for (const groundingChunk of groundingChunks) {
+                      const webSource = groundingChunk?.web;
+                      if (!webSource?.uri || groundedSources.has(webSource.uri)) continue;
+                      groundedSources.set(webSource.uri, {
+                        title: cleanSourceTitle(webSource.title, 'Web source'),
+                        url: webSource.uri,
+                        snippet: '',
+                      });
+                    }
+                  }
+                }
               }
+
+              responseSources = Array.from(groundedSources.values());
             } else {
               const streamGen = streamOpenAICompatible(
                 candidate.baseUrl,
@@ -186,6 +231,16 @@ export async function POST(req: NextRequest) {
                 totalOutputChars += deltaText.length;
                 controller.enqueue(
                   encoder.encode(`data: ${JSON.stringify({ type: 'delta', text: deltaText })}\n\n`)
+                );
+              }
+            }
+
+            if (webSearch) {
+              const sourceAppendix = formatSourceAppendix(responseSources);
+              if (sourceAppendix) {
+                totalOutputChars += sourceAppendix.length;
+                controller.enqueue(
+                  encoder.encode(`data: ${JSON.stringify({ type: 'delta', text: sourceAppendix })}\n\n`)
                 );
               }
             }
