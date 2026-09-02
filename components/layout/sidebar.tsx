@@ -1,9 +1,14 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import Link from 'next/link';
-import { Plus, MessageSquare, Settings, Search, Clock, Trash2, X, Pin, Edit2, Check, Sparkles } from 'lucide-react';
-import { ChatSession } from '@/hooks/use-chat-history';
+import { Plus, MessageSquare, Settings, Search, Clock, Trash2, X, Pin, Edit2, Check, Sparkles, Download, Upload, ShieldCheck } from 'lucide-react';
+import {
+  CHAT_BACKUP_IMPORT_EVENT,
+  createLocalChatBackup,
+  parseLocalChatBackup,
+  type ChatSession,
+} from '@/hooks/use-chat-history';
 import { AbhiLogo } from '@/components/brand/logo';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 
@@ -36,6 +41,8 @@ export default function Sidebar({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [backupStatus, setBackupStatus] = useState('');
+  const backupInputRef = useRef<HTMLInputElement>(null);
 
   const filteredSessions = sessions.filter(s => 
     s.title.toLowerCase().includes(searchQuery.toLowerCase())
@@ -43,6 +50,43 @@ export default function Sidebar({
 
   const pinnedSessions = filteredSessions.filter(s => s.isPinned);
   const recentSessions = filteredSessions.filter(s => !s.isPinned);
+
+  const showBackupStatus = (message: string) => {
+    setBackupStatus(message);
+    window.setTimeout(() => setBackupStatus(''), 2600);
+  };
+
+  const handleExportBackup = () => {
+    try {
+      const content = createLocalChatBackup(sessions);
+      const blob = new Blob([content], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `abhiai-chat-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      showBackupStatus(`${sessions.length} chat${sessions.length === 1 ? '' : 's'} backed up`);
+    } catch {
+      showBackupStatus('Could not create backup');
+    }
+  };
+
+  const handleImportBackup = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    try {
+      const imported = parseLocalChatBackup(await file.text());
+      window.dispatchEvent(new CustomEvent(CHAT_BACKUP_IMPORT_EVENT, { detail: imported }));
+      showBackupStatus(`${imported.length} chat${imported.length === 1 ? '' : 's'} restored`);
+    } catch (error) {
+      showBackupStatus(error instanceof Error ? error.message : 'Invalid backup file');
+    }
+  };
 
   const startEditing = (e: React.MouseEvent, session: ChatSession) => {
     e.stopPropagation();
@@ -192,7 +236,6 @@ export default function Sidebar({
 
   return (
     <>
-      {/* Mobile Backdrop */}
       {isOpen && (
         <div 
           className="fixed inset-0 z-40 bg-black/20 dark:bg-black/40 backdrop-blur-xs md:hidden"
@@ -200,13 +243,11 @@ export default function Sidebar({
         />
       )}
 
-      {/* Sidebar Container */}
       <div className={`
         fixed inset-y-0 left-0 z-50 w-72 bg-zinc-50/90 dark:bg-zinc-900/90 backdrop-blur-md border-r border-zinc-200/80 dark:border-zinc-800/80
         transform transition-transform duration-300 ease-in-out flex flex-col
         ${isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
       `}>
-        {/* Brand Header */}
         <div className="p-4 pb-2 flex items-center justify-between border-b border-zinc-200/50 dark:border-zinc-800/50">
           <AbhiLogo variant="full" size="md" href="/" className="cursor-pointer" />
           <button 
@@ -218,7 +259,6 @@ export default function Sidebar({
           </button>
         </div>
 
-        {/* Action button */}
         <div className="p-4 pt-3 space-y-2">
           <button 
             onClick={() => { onNewChat(); onClose(); }}
@@ -239,7 +279,6 @@ export default function Sidebar({
           )}
         </div>
 
-        {/* Search */}
         <div className="px-4 pb-3">
           <div className="relative">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
@@ -253,9 +292,7 @@ export default function Sidebar({
           </div>
         </div>
 
-        {/* Chat List */}
         <div className="flex-1 overflow-y-auto px-3 space-y-4">
-          {/* Pinned Section */}
           {pinnedSessions.length > 0 && (
             <div>
               <div className="px-2 text-xs font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-500 mb-1.5 flex items-center gap-1.5">
@@ -267,7 +304,6 @@ export default function Sidebar({
             </div>
           )}
 
-          {/* Recent Section */}
           <div>
             <div className="px-2 text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 mb-1.5 flex items-center gap-1.5">
               <Clock className="w-3.5 h-3.5" /> Recent
@@ -284,8 +320,46 @@ export default function Sidebar({
           </div>
         </div>
 
-        {/* Footer */}
         <div className="p-3 border-t border-zinc-200 dark:border-zinc-800 space-y-3">
+          <div className="rounded-xl border border-emerald-200/70 dark:border-emerald-900/60 bg-emerald-50/60 dark:bg-emerald-950/20 p-2.5 space-y-2">
+            <div className="flex items-center gap-2 text-[11px] font-medium text-emerald-800 dark:text-emerald-300">
+              <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+              <span>Chats stay on this device</span>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              <button
+                type="button"
+                onClick={handleExportBackup}
+                className="flex items-center justify-center gap-1.5 rounded-lg border border-zinc-200/80 dark:border-zinc-700/80 bg-white/80 dark:bg-zinc-900/80 px-2 py-1.5 text-[11px] font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-white dark:hover:bg-zinc-800 transition-colors"
+                title="Download a local backup of all chats"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Backup
+              </button>
+              <button
+                type="button"
+                onClick={() => backupInputRef.current?.click()}
+                className="flex items-center justify-center gap-1.5 rounded-lg border border-zinc-200/80 dark:border-zinc-700/80 bg-white/80 dark:bg-zinc-900/80 px-2 py-1.5 text-[11px] font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-white dark:hover:bg-zinc-800 transition-colors"
+                title="Merge chats from an AbhiAI backup"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                Restore
+              </button>
+              <input
+                ref={backupInputRef}
+                type="file"
+                accept="application/json,.json"
+                className="hidden"
+                onChange={handleImportBackup}
+              />
+            </div>
+            {backupStatus && (
+              <p className="text-[10px] leading-snug text-zinc-500 dark:text-zinc-400" role="status">
+                {backupStatus}
+              </p>
+            )}
+          </div>
+
           <ThemeToggle />
           <Link 
             href="/admin" 
