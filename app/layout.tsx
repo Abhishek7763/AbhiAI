@@ -1,5 +1,6 @@
 import type {Metadata} from 'next';
 import './globals.css'; // Global styles
+import './mobile-chat-polish.css';
 import { AppStructureFlowBackground } from '@/components/effects/structure-flow-background';
 
 export const metadata: Metadata = {
