@@ -9,7 +9,6 @@ export async function GET() {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Failed to load usage' }, { status: 503 });
   }
 
-  // Aggregate stats
   const totalRequests = logs.length;
   const successfulRequests = logs.filter(l => l.status === 'success').length;
   const failedRequests = logs.filter(l => l.status === 'error').length;
@@ -23,10 +22,10 @@ export async function GET() {
     ? Math.round(logs.reduce((acc, l) => acc + l.durationMs, 0) / logs.length)
     : 0;
 
-  // Breakdown by Model
   const modelUsage: Record<string, number> = {};
   logs.forEach(l => {
-    modelUsage[l.modelOrAlias] = (modelUsage[l.modelOrAlias] || 0) + 1;
+    const modelName = l.executedModelName || l.modelOrAlias;
+    modelUsage[modelName] = (modelUsage[modelName] || 0) + 1;
   });
 
   return NextResponse.json({
@@ -38,7 +37,9 @@ export async function GET() {
       totalTokensEstimated,
       avgLatency,
     },
-    modelBreakdown: Object.entries(modelUsage).map(([name, count]) => ({ name, count })),
+    modelBreakdown: Object.entries(modelUsage)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count),
     recentLogs: logs.slice(0, 50),
   });
 }
