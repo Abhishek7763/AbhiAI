@@ -15,6 +15,7 @@ import {
   FileText,
   Settings,
   LogOut,
+  Route,
 } from 'lucide-react';
 import { logout } from '@/app/admin/actions';
 import { AbhiLogo } from '@/components/brand/logo';
@@ -25,6 +26,7 @@ const NAV_ITEMS = [
   { name: 'AI Chat', href: '/admin/chat', icon: MessageSquare },
   { name: 'Providers', href: '/admin/providers', icon: Boxes },
   { name: 'Models', href: '/admin/models', icon: Cpu },
+  { name: 'Smart Routing', href: '/admin/routing', icon: Route },
   { name: 'AI Connections', href: '/admin/connections', icon: Server },
   { name: 'Agents', href: '/admin/agents', icon: Bot },
   { name: 'Public AI', href: '/admin/public-ai', icon: Globe },
