@@ -1,11 +1,26 @@
-<div align="center">
+# AbhiAI
 
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+A modern, premium, mobile-first AI platform.
 
-  <h1>Built with AI Studio</h2>
+## Architecture & Stack
+- Framework: Next.js 15 (App Router)
+- Language: TypeScript
+- Styling: Tailwind CSS v4
+- Animations: Motion
+- Icons: Lucide React
 
-  <p>The fastest path from prompt to production with Gemini.</p>
+## Development Phases
+The project is built in structured phases to ensure stability, security, and quality.
 
-  <a href="https://aistudio.google.com/apps">Start building</a>
+- **Phase 0:** Project Foundation (Current)
+- **Phase 1:** Public UI
+- **Phase 2:** Supabase Foundation
+- *(See master build plan for subsequent phases)*
 
-</div>
+## Structure
+- `/app` - Next.js App Router pages and layouts
+- `/components` - Reusable React components
+- `/lib` - Utilities and shared logic
+- `/providers` - Backend AI provider integrations
+- `/services` - Internal services (Auth, DB, etc.)
+- `/types` - TypeScript type definitions

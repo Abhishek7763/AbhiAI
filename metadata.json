@@ -1,0 +1,6 @@
+{
+  "name": "AbhiAI",
+  "description": "A modern, premium, mobile-first AI platform with multi-modal chat, voice dictation, real-time web search grounding, and code preview.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

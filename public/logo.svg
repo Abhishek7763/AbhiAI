@@ -1,0 +1,193 @@
+<svg viewBox="0 0 600 160" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Background Grid -->
+    <pattern id="full-grid" width="20" height="20" patternUnits="userSpaceOnUse">
+      <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#222533" stroke-width="0.75" stroke-opacity="0.45" />
+    </pattern>
+
+    <!-- Radial Spotlight -->
+    <radialGradient id="spotlight" cx="30%" cy="50%" r="60%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.14" />
+      <stop offset="60%" stop-color="#94a3b8" stop-opacity="0.03" />
+      <stop offset="100%" stop-color="#000000" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Chrome Ribbon Gradient -->
+    <linearGradient id="ribbon-grad" x1="20" y1="140" x2="140" y2="20" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#CBD5E1" />
+      <stop offset="15%" stop-color="#FFFFFF" />
+      <stop offset="35%" stop-color="#94A3B8" />
+      <stop offset="55%" stop-color="#E2E8F0" />
+      <stop offset="70%" stop-color="#64748B" />
+      <stop offset="88%" stop-color="#FFFFFF" />
+      <stop offset="100%" stop-color="#E2E8F0" />
+    </linearGradient>
+
+    <!-- Front Strand Gradient -->
+    <linearGradient id="front-grad" x1="50" y1="30" x2="110" y2="100" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="30%" stop-color="#F8FAFC" />
+      <stop offset="60%" stop-color="#CBD5E1" />
+      <stop offset="100%" stop-color="#475569" />
+    </linearGradient>
+
+    <!-- Under Shadow Gradient -->
+    <linearGradient id="under-grad" x1="110" y1="40" x2="40" y2="120" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#334155" />
+      <stop offset="40%" stop-color="#64748B" />
+      <stop offset="75%" stop-color="#CBD5E1" />
+      <stop offset="100%" stop-color="#1E293B" />
+    </linearGradient>
+
+    <filter id="crossover-shad" x="-20%" y="-20%" width="150%" height="150%">
+      <feDropShadow dx="-2" dy="4" stdDeviation="3" flood-color="#090d16" flood-opacity="0.65" />
+    </filter>
+  </defs>
+
+  <!-- Dark Carbon Grid Container -->
+  <rect width="600" height="160" rx="24" fill="#0d0e15" />
+  <rect width="600" height="160" rx="24" fill="url(#full-grid)" />
+  <rect width="600" height="160" rx="24" fill="url(#spotlight)" />
+
+  <!-- Corner Border Accents -->
+  <path d="M 0 24 A 24 24 0 0 1 24 0 H 32 V 4 H 24 A 20 20 0 0 0 4 24 V 32 H 0 Z" fill="#ffffff" fill-opacity="0.2" />
+  <path d="M 600 24 A 24 24 0 0 0 576 0 H 568 V 4 H 576 A 20 20 0 0 1 596 24 V 32 H 600 Z" fill="#ffffff" fill-opacity="0.2" />
+  <path d="M 0 136 A 24 24 0 0 0 24 160 H 32 V 156 H 24 A 20 20 0 0 1 4 136 V 128 H 0 Z" fill="#ffffff" fill-opacity="0.2" />
+  <path d="M 600 136 A 24 24 0 0 1 576 160 H 568 V 156 H 576 A 20 20 0 0 0 596 136 V 128 H 600 Z" fill="#ffffff" fill-opacity="0.2" />
+
+  <!-- Left: 3D Infinity Ribbon (Centered around X: 95, Y: 80, scale 0.7) -->
+  <g transform="translate(15, -5) scale(0.85)">
+    <!-- Ambient glow behind icon -->
+    <circle cx="100" cy="100" r="65" fill="url(#spotlight)" />
+
+    <!-- Under Strand -->
+    <path
+      d="M 98 94
+         C 112 76, 134 52, 154 58
+         C 174 64, 180 88, 162 110
+         C 144 132, 118 152, 98 120
+         C 80 92, 58 82, 42 90
+         C 24 100, 22 126, 40 144
+         C 58 162, 86 160, 102 130
+         C 106 122, 104 112, 98 94 Z"
+      fill="none"
+      stroke="url(#under-grad)"
+      stroke-width="19"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+
+    <!-- Main Ribbon -->
+    <path
+      d="M 98 94
+         C 112 76, 134 52, 154 58
+         C 174 64, 180 88, 162 110
+         C 144 132, 118 152, 98 120
+         C 80 92, 58 82, 42 90
+         C 24 100, 22 126, 40 144
+         C 58 162, 86 160, 102 130
+         C 106 122, 104 112, 98 94 Z"
+      fill="none"
+      stroke="url(#ribbon-grad)"
+      stroke-width="18"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+
+    <!-- Overlapping Strand -->
+    <path
+      d="M 82 72
+         C 96 82, 118 88, 136 78
+         C 154 68, 162 58, 150 58
+         C 132 54, 112 74, 98 92
+         C 92 102, 90 114, 94 126"
+      fill="none"
+      stroke="url(#front-grad)"
+      stroke-width="18"
+      stroke-linecap="round"
+      filter="url(#crossover-shad)"
+    />
+
+    <!-- Specular Highlights -->
+    <path
+      d="M 124 64
+         C 142 54, 162 58, 166 76
+         C 168 90, 156 110, 142 124"
+      fill="none"
+      stroke="#FFFFFF"
+      stroke-width="3.2"
+      stroke-linecap="round"
+      stroke-opacity="0.9"
+    />
+
+    <path
+      d="M 38 96
+         C 28 106, 26 126, 42 142
+         C 56 156, 80 154, 94 130"
+      fill="none"
+      stroke="#FFFFFF"
+      stroke-width="3.2"
+      stroke-linecap="round"
+      stroke-opacity="0.9"
+    />
+
+    <path
+      d="M 94 86 C 98 94, 104 102, 110 110"
+      fill="none"
+      stroke="#FFFFFF"
+      stroke-width="2.5"
+      stroke-linecap="round"
+      stroke-opacity="0.95"
+    />
+  </g>
+
+  <!-- Right: Pure White Geometric Capsule Typography "A B H I A I" -->
+  <g transform="translate(195, 63) scale(1.05)" fill="#FFFFFF">
+    <!-- Letter 'A' (1) -->
+    <g transform="translate(0, 0)">
+      <path
+        fill-rule="evenodd"
+        clip-rule="evenodd"
+        d="M 5 34 C 2.238 34 0 31.762 0 29 V 14 C 0 6.268 6.268 0 14 0 H 22 C 29.732 0 36 6.268 36 14 V 29 C 36 31.762 33.762 34 31 34 C 28.238 34 26 31.762 26 29 V 24 H 10 V 29 C 10 31.762 7.762 34 5 34 Z M 10 16 H 26 V 14 C 26 9.582 22.418 6 18 6 C 13.582 6 10 9.582 10 14 V 16 Z"
+      />
+    </g>
+
+    <!-- Letter 'B' -->
+    <g transform="translate(62, 0)">
+      <path
+        fill-rule="evenodd"
+        clip-rule="evenodd"
+        d="M 0 5 C 0 2.238 2.238 0 5 0 H 22 C 28.627 0 34 5.373 34 12 C 34 15.2 32.7 18.1 30.5 20.2 C 33.2 22.4 35 25.7 35 29.5 C 35 36.403 29.403 42 22.5 42 H 5 C 2.238 42 0 39.762 0 37 V 5 Z M 9 8 V 16 H 21 C 23.209 16 25 14.209 25 12 C 25 9.791 23.209 8 21 8 H 9 Z M 9 24 V 34 H 22 C 24.761 34 27 31.761 27 29 C 27 26.239 24.761 24 22 24 H 9 Z"
+        transform="scale(0.81)"
+      />
+    </g>
+
+    <!-- Letter 'H' -->
+    <g transform="translate(124, 0)">
+      <path
+        fill-rule="evenodd"
+        clip-rule="evenodd"
+        d="M 5 0 C 7.762 0 10 2.238 10 5 V 13 H 26 V 5 C 26 2.238 28.238 0 31 0 C 33.762 0 36 2.238 36 5 V 29 C 36 31.762 33.762 34 31 34 C 28.238 34 26 31.762 26 29 V 21 H 10 V 29 C 10 31.762 7.762 34 5 34 C 2.238 34 0 31.762 0 29 V 5 C 0 2.238 2.238 0 5 0 Z"
+      />
+    </g>
+
+    <!-- Letter 'I' (1) -->
+    <g transform="translate(186, 0)">
+      <rect x="0" y="0" width="10" height="34" rx="5" />
+    </g>
+
+    <!-- Letter 'A' (2) -->
+    <g transform="translate(224, 0)">
+      <path
+        fill-rule="evenodd"
+        clip-rule="evenodd"
+        d="M 5 34 C 2.238 34 0 31.762 0 29 V 14 C 0 6.268 6.268 0 14 0 H 22 C 29.732 0 36 6.268 36 14 V 29 C 36 31.762 33.762 34 31 34 C 28.238 34 26 31.762 26 29 V 24 H 10 V 29 C 10 31.762 7.762 34 5 34 Z M 10 16 H 26 V 14 C 26 9.582 22.418 6 18 6 C 13.582 6 10 9.582 10 14 V 16 Z"
+      />
+    </g>
+
+    <!-- Letter 'I' (2) -->
+    <g transform="translate(286, 0)">
+      <rect x="0" y="0" width="10" height="34" rx="5" />
+    </g>
+  </g>
+</svg>
