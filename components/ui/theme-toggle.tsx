@@ -92,12 +92,12 @@ export function ThemeToggle({ variant = 'segmented', className = '' }: ThemeTogg
         type="button"
         onClick={handleToggleNext}
         title={`Switch to ${isDark ? 'Light' : 'Dark'} Mode (Current: ${theme})`}
-        className={`flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors shadow-2xs ${className}`}
+        className={`relative flex shrink-0 items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/90 dark:bg-zinc-900/90 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors shadow-2xs overflow-visible ${className}`}
       >
         {isDark ? (
-          <Sun className="w-4 h-4 text-amber-500 hover:rotate-45 transition-transform" />
+          <Sun className="block w-4 h-4 shrink-0 text-amber-500 hover:rotate-45 transition-transform" />
         ) : (
-          <Moon className="w-4 h-4 text-indigo-600 hover:-rotate-12 transition-transform" />
+          <Moon className="block w-4 h-4 shrink-0 text-indigo-600 dark:text-indigo-400 hover:-rotate-12 transition-transform" />
         )}
       </button>
     );
