@@ -1,6 +1,7 @@
 import 'server-only';
 
 import type { AIConnection } from '@/lib/connections';
+import { classifyModelBilling } from '@/lib/ai/free-guard';
 import { encryptApiKey } from '@/lib/security/api-key-crypto';
 import { createAdminClient } from '@/lib/supabase/admin';
 
@@ -119,6 +120,9 @@ export async function saveConnection(input: ConnectionInput): Promise<AIConnecti
     keyLabel: input.keyLabel,
   });
 
+  const billing = classifyModelBilling(provider.slug, input.modelId);
+  const verifiedFree = billing === 'FREE_VERIFIED' || billing === 'FREE_LIMITED';
+
   const supabase = createAdminClient();
   const values = {
     provider_id: provider.id,
@@ -127,7 +131,7 @@ export async function saveConnection(input: ConnectionInput): Promise<AIConnecti
     alias: input.assignedAlias || null,
     is_active: input.isActive ?? true,
     is_public: input.scope !== 'personal',
-    is_free: true,
+    is_free: verifiedFree,
   };
 
   const query = input.id
