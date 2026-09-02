@@ -150,25 +150,74 @@ export async function updateStoredModel(id: string, updates: Partial<Pick<AIMode
 
 export async function getStoredUsageLogs(): Promise<UsageEntry[]> {
   const supabase = createAdminClient();
-  const { data, error } = await supabase.from('usage_events').select('*, ai_providers(name)').order('created_at', { ascending: false }).limit(500);
+  const { data, error } = await supabase
+    .from('usage_events')
+    .select('*, ai_providers(name, slug), ai_models(name, model_id)')
+    .order('created_at', { ascending: false })
+    .limit(500);
   throwIfError(error);
+
   return (data ?? []).map((row: any) => ({
     id: String(row.id),
     timestamp: row.created_at,
     modelOrAlias: row.model_or_alias,
-    provider: row.ai_providers?.name ?? 'unknown',
+    executedModelName: row.ai_models?.name ?? undefined,
+    executedModelId: row.ai_models?.model_id ?? undefined,
+    connectionId: row.model_id ?? undefined,
+    provider: row.ai_providers?.name ?? row.ai_providers?.slug ?? 'unknown',
     promptLength: row.prompt_length,
     responseLength: row.response_length,
     durationMs: row.duration_ms,
     failoverUsed: row.failover_used,
     isPublic: row.is_public,
     status: row.status === 'aborted' ? 'error' : row.status,
+    errorCode: row.error_code ?? undefined,
   }));
 }
 
 export async function insertUsageEvent(entry: Omit<UsageEntry, 'id' | 'timestamp'>) {
   const supabase = createAdminClient();
+  let providerRecordId: string | null = null;
+  let apiKeyRecordId: string | null = null;
+  let modelRecordId: string | null = null;
+
+  if (entry.connectionId) {
+    const { data: modelRow, error: modelError } = await supabase
+      .from('ai_models')
+      .select('id, provider_id, ai_providers(ai_api_keys(id, status, priority))')
+      .eq('id', entry.connectionId)
+      .maybeSingle();
+    throwIfError(modelError);
+
+    if (modelRow) {
+      modelRecordId = modelRow.id;
+      providerRecordId = modelRow.provider_id;
+      const keys = ((modelRow as any).ai_providers?.ai_api_keys ?? [])
+        .filter((key: any) => key.status === 'active')
+        .sort((a: any, b: any) => (a.priority ?? 100) - (b.priority ?? 100));
+      apiKeyRecordId = keys[0]?.id ?? null;
+    }
+  } else if (entry.provider && entry.provider !== 'all-failed' && entry.provider !== 'unknown') {
+    const { data: providerRow, error: providerError } = await supabase
+      .from('ai_providers')
+      .select('id, ai_api_keys(id, status, priority)')
+      .eq('slug', entry.provider)
+      .maybeSingle();
+    throwIfError(providerError);
+
+    if (providerRow) {
+      providerRecordId = providerRow.id;
+      const keys = ((providerRow as any).ai_api_keys ?? [])
+        .filter((key: any) => key.status === 'active')
+        .sort((a: any, b: any) => (a.priority ?? 100) - (b.priority ?? 100));
+      apiKeyRecordId = keys[0]?.id ?? null;
+    }
+  }
+
   const { error } = await supabase.from('usage_events').insert({
+    provider_id: providerRecordId,
+    api_key_id: apiKeyRecordId,
+    model_id: modelRecordId,
     model_or_alias: entry.modelOrAlias,
     status: entry.status,
     prompt_length: entry.promptLength,
@@ -176,6 +225,7 @@ export async function insertUsageEvent(entry: Omit<UsageEntry, 'id' | 'timestamp
     duration_ms: entry.durationMs,
     failover_used: entry.failoverUsed,
     is_public: entry.isPublic,
+    error_code: entry.errorCode ?? null,
   });
   throwIfError(error);
 }
