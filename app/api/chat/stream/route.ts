@@ -4,7 +4,14 @@ import { resolveRoutePlan, RouteCandidate } from "@/lib/ai/router";
 import { streamOpenAICompatible } from "@/lib/ai/stream";
 import { logUsageEvent } from "@/lib/usage-logger";
 import { fetchWebGroundingContext } from "@/lib/ai/web-search";
-import { formatDocumentsForPrompt } from "@/lib/files/document-extractor";
+import {
+  formatDocumentsForPrompt,
+  isGeminiNativeAttachment,
+  isPdfAttachment,
+  normalizeAttachmentBase64,
+  validateInlineAttachments,
+  type AttachmentPayload,
+} from "@/lib/files/document-extractor";
 import { GoogleGenAI } from "@google/genai";
 
 export async function POST(req: NextRequest) {
@@ -15,20 +22,29 @@ export async function POST(req: NextRequest) {
 
   try {
     const { message, history, modelId, attachments, webSearch } = await req.json();
+    const currentAttachments: AttachmentPayload[] = Array.isArray(attachments) ? attachments : [];
     requestedModel = modelId || 'default';
 
-    if (!message && (!attachments || attachments.length === 0)) {
+    if (!message && currentAttachments.length === 0) {
       return new Response(JSON.stringify({ error: "Message or attachment is required" }), {
         status: 400,
         headers: { "Content-Type": "application/json" }
       });
     }
 
-    const hasImages = Array.isArray(attachments) && attachments.some((a: any) => a.type?.startsWith('image/'));
-    const routePlan = await resolveRoutePlan(requestedModel, hasImages);
+    const attachmentError = validateInlineAttachments(currentAttachments);
+    if (attachmentError) {
+      return new Response(JSON.stringify({ error: attachmentError }), {
+        status: 413,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    const requiresNativeMultimodal = currentAttachments.some((attachment) => isGeminiNativeAttachment(attachment));
+    const routePlan = await resolveRoutePlan(requestedModel, requiresNativeMultimodal);
 
     if (!routePlan.primary) {
-      return new Response(JSON.stringify({ error: "No usable AI model is configured. Open Admin > Providers and run Test & Discover." }), {
+      return new Response(JSON.stringify({ error: "No usable AI model is configured for this request. Open Admin > Providers and run Test & Discover." }), {
         status: 503,
         headers: { "Content-Type": "application/json" }
       });
@@ -70,7 +86,10 @@ export async function POST(req: NextRequest) {
               webContext
             ].filter(Boolean).join('\n\n');
 
-            const documentTextAppendix = formatDocumentsForPrompt(attachments);
+            // Gemini receives PDFs natively. Other providers get the local text fallback.
+            const documentTextAppendix = formatDocumentsForPrompt(currentAttachments, {
+              skipNativePdf: candidate.providerId === 'google',
+            });
             const userEffectiveContent = (message || 'Please review the attached content.') + documentTextAppendix;
 
             const chatMessages: any[] = [];
@@ -79,14 +98,13 @@ export async function POST(req: NextRequest) {
                 chatMessages.push({
                   role: h.role === 'assistant' ? 'assistant' : 'user',
                   content: h.content || '',
-                  attachments: h.attachments,
                 });
               }
             }
             chatMessages.push({
               role: 'user',
               content: userEffectiveContent,
-              attachments,
+              attachments: candidate.providerId === 'google' ? [] : currentAttachments,
             });
 
             controller.enqueue(
@@ -120,17 +138,18 @@ export async function POST(req: NextRequest) {
               }
 
               const userParts: any[] = [];
-              if (Array.isArray(attachments)) {
-                for (const att of attachments) {
-                  if (att.type?.startsWith('image/')) {
-                    userParts.push({
-                      inlineData: {
-                        mimeType: att.type,
-                        data: att.data.startsWith('data:') ? att.data.split(',')[1] : att.data
-                      }
-                    });
-                  }
+              for (const attachment of currentAttachments) {
+                if (!isGeminiNativeAttachment(attachment)) continue;
+
+                if (attachment.name) {
+                  userParts.push({ text: `Attached file: ${attachment.name}` });
                 }
+                userParts.push({
+                  inlineData: {
+                    mimeType: attachment.type || (isPdfAttachment(attachment) ? 'application/pdf' : 'application/octet-stream'),
+                    data: normalizeAttachmentBase64(attachment.data),
+                  }
+                });
               }
               userParts.push({ text: userEffectiveContent });
 
