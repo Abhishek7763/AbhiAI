@@ -4,12 +4,15 @@ import { resolveRoutePlan, RouteCandidate } from "@/lib/ai/router";
 import { getProviderAdapter } from "@/lib/ai/providers/registry";
 import { logUsageEvent } from "@/lib/usage-logger";
 import { recordRuntimeModelFailure, recordRuntimeModelSuccess } from "@/lib/ai/runtime-health";
+import { withTimeout } from "@/lib/ai/timeout";
 import {
   formatDocumentsForPrompt,
   isGeminiNativeAttachment,
   validateInlineAttachments,
   type AttachmentPayload,
 } from "@/lib/files/document-extractor";
+
+const PROVIDER_TIMEOUT_MS = 45_000;
 
 export async function POST(req: Request) {
   const startTime = Date.now();
@@ -30,11 +33,11 @@ export async function POST(req: Request) {
     }
 
     const requiresNativeMultimodal = currentAttachments.some((attachment) => isGeminiNativeAttachment(attachment));
-    const routePlan = await resolveRoutePlan(requestedModel, requiresNativeMultimodal);
+    const routePlan = await resolveRoutePlan(requestedModel, requiresNativeMultimodal, message || '');
 
     if (!routePlan.primary) {
       return NextResponse.json(
-        { error: "No usable AI model is configured for this request. Open Admin > Providers and run Test & Discover." },
+        { error: "No usable AI model is configured for this request. Open Admin > Providers and Smart Routing." },
         { status: 503 }
       );
     }
@@ -47,6 +50,7 @@ export async function POST(req: Request) {
     let executedCandidate: RouteCandidate | null = null;
 
     for (const candidate of executionChain) {
+      const candidateStartedAt = Date.now();
       try {
         const combinedPrompt = [globalInstructions, candidate.systemPrompt].filter(Boolean).join('\n\n');
         const documentTextAppendix = formatDocumentsForPrompt(currentAttachments, {
@@ -82,15 +86,19 @@ export async function POST(req: Request) {
           throw new Error(`No runtime API key is available for ${candidate.name}`);
         }
 
-        const reply = await adapter.chat(
-          candidate.apiKey,
-          candidate.modelId,
-          chatMessages,
-          combinedPrompt
+        const reply = await withTimeout(
+          adapter.chat(
+            candidate.apiKey,
+            candidate.modelId,
+            chatMessages,
+            combinedPrompt
+          ),
+          PROVIDER_TIMEOUT_MS,
+          candidate.name,
         );
 
         if (reply) {
-          await recordRuntimeModelSuccess(candidate.connectionId);
+          await recordRuntimeModelSuccess(candidate.connectionId, Date.now() - candidateStartedAt);
           successfulReply = reply;
           executedCandidate = candidate;
           break;

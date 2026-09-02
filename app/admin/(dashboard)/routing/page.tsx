@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Activity, Check, Loader2, Route, Save, ShieldCheck, Sparkles } from 'lucide-react';
+import { Activity, Check, Gauge, Loader2, LockKeyhole, Route, Save, ShieldCheck, Sparkles } from 'lucide-react';
 
 type ModelOption = {
   recordId: string;
@@ -23,6 +23,13 @@ type HealthRow = {
 type Config = {
   preferredModelRecordId: string | null;
   poolModelRecordIds: string[];
+  strictPool: boolean;
+};
+
+const EMPTY_CONFIG: Config = {
+  preferredModelRecordId: null,
+  poolModelRecordIds: [],
+  strictPool: false,
 };
 
 function healthMeta(status: HealthRow['status'] | 'UNKNOWN') {
@@ -41,7 +48,7 @@ function healthMeta(status: HealthRow['status'] | 'UNKNOWN') {
 export default function RoutingPage() {
   const [models, setModels] = useState<ModelOption[]>([]);
   const [healthData, setHealthData] = useState<HealthRow[]>([]);
-  const [config, setConfig] = useState<Config>({ preferredModelRecordId: null, poolModelRecordIds: [] });
+  const [config, setConfig] = useState<Config>(EMPTY_CONFIG);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -62,7 +69,7 @@ export default function RoutingPage() {
       .then(([routingData, healthResponse]) => {
         if (!mounted) return;
         setModels(routingData.models || []);
-        setConfig(routingData.config || { preferredModelRecordId: null, poolModelRecordIds: [] });
+        setConfig({ ...EMPTY_CONFIG, ...(routingData.config || {}) });
         setHealthData(Array.isArray(healthResponse.health) ? healthResponse.health : []);
       })
       .catch((error) => {
@@ -92,7 +99,12 @@ export default function RoutingPage() {
         : [...current.poolModelRecordIds, recordId];
       const preferredModelRecordId =
         exists && current.preferredModelRecordId === recordId ? null : current.preferredModelRecordId;
-      return { ...current, poolModelRecordIds, preferredModelRecordId };
+      return {
+        ...current,
+        poolModelRecordIds,
+        preferredModelRecordId,
+        strictPool: poolModelRecordIds.length === 0 ? false : current.strictPool,
+      };
     });
   };
 
@@ -107,8 +119,12 @@ export default function RoutingPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Could not save Smart Auto routing.');
-      setConfig(data.config);
-      setMessage('Smart Auto routing saved. AbhiAI Auto will use this pool immediately.');
+      setConfig({ ...EMPTY_CONFIG, ...data.config });
+      setMessage(
+        data.config?.strictPool
+          ? 'Smart Auto saved. Only your selected pool can be used, ranked intelligently per request.'
+          : 'Smart Auto saved. Your pool is preferred, with emergency runtime fallbacks allowed.',
+      );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not save routing.');
     } finally {
@@ -129,7 +145,7 @@ export default function RoutingPage() {
             <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Smart Routing</h1>
           </div>
           <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400 max-w-2xl">
-            Build the default AbhiAI Auto pool. Cooling, rate-limited or unavailable models are skipped automatically.
+            AbhiAI Auto ranks your pool for every request instead of blindly using one fixed model.
           </p>
         </div>
         <button
@@ -146,7 +162,7 @@ export default function RoutingPage() {
       <div className="grid sm:grid-cols-4 gap-3">
         <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
           <div className="text-xs font-semibold uppercase tracking-wider text-zinc-400">Routing mode</div>
-          <div className="mt-2 flex items-center gap-2 font-semibold"><Sparkles className="w-4 h-4 text-blue-500" /> Smart Auto</div>
+          <div className="mt-2 flex items-center gap-2 font-semibold"><Sparkles className="w-4 h-4 text-blue-500" /> Smart Score</div>
         </div>
         <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
           <div className="text-xs font-semibold uppercase tracking-wider text-zinc-400">Pool models</div>
@@ -162,10 +178,39 @@ export default function RoutingPage() {
         </div>
       </div>
 
+      <div className="rounded-2xl border border-blue-200/70 dark:border-blue-900/70 bg-blue-50/70 dark:bg-blue-950/20 p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div className="flex items-start gap-3">
+          <div className="w-9 h-9 rounded-xl bg-white dark:bg-zinc-900 border border-blue-100 dark:border-blue-900 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0">
+            <Gauge className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Smart score is active</div>
+            <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1 max-w-2xl">
+              Health, recent success, learned latency, query capability and admin priority are combined. Preferred gives a strong boost, but a clearly healthier or better-suited model can still win.
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          disabled={config.poolModelRecordIds.length === 0}
+          onClick={() => setConfig((current) => ({ ...current, strictPool: !current.strictPool }))}
+          className="inline-flex items-center gap-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3.5 py-2.5 text-sm font-semibold disabled:opacity-40"
+        >
+          <span className={`w-9 h-5 rounded-full p-0.5 transition-colors ${config.strictPool ? 'bg-blue-600' : 'bg-zinc-300 dark:bg-zinc-700'}`}>
+            <span className={`block w-4 h-4 rounded-full bg-white transition-transform ${config.strictPool ? 'translate-x-4' : 'translate-x-0'}`} />
+          </span>
+          <LockKeyhole className="w-4 h-4" />
+          Strict Pool {config.strictPool ? 'ON' : 'OFF'}
+        </button>
+      </div>
+
       <div className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden">
         <div className="p-5 border-b border-zinc-200 dark:border-zinc-800">
           <h2 className="font-semibold text-zinc-900 dark:text-zinc-100">Default model pool</h2>
-          <p className="text-xs text-zinc-500 mt-1">Select as many eligible models as you want. Choose one preferred model; the remaining selected models act as automatic fallbacks.</p>
+          <p className="text-xs text-zinc-500 mt-1">
+            All selected models stay in your Auto pool. The router scores them for each request. Preferred is a boost, not a hard lock. Only the best healthy candidates are tried per request to avoid long timeout chains.
+          </p>
         </div>
 
         <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -199,7 +244,7 @@ export default function RoutingPage() {
                     onClick={() => setConfig((current) => ({ ...current, preferredModelRecordId: preferred ? null : model.recordId }))}
                     className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors disabled:opacity-40 ${preferred ? 'bg-blue-600 border-blue-600 text-white' : 'border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300'}`}
                   >
-                    {preferred ? 'Preferred' : 'Set preferred'}
+                    {preferred ? 'Preferred boost' : 'Set preferred'}
                   </button>
                 </div>
               </div>

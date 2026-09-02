@@ -4,6 +4,7 @@ import { resolveRoutePlan, RouteCandidate } from "@/lib/ai/router";
 import { streamOpenAICompatible } from "@/lib/ai/stream";
 import { logUsageEvent } from "@/lib/usage-logger";
 import { recordRuntimeModelFailure, recordRuntimeModelSuccess } from "@/lib/ai/runtime-health";
+import { withFirstChunkTimeout, withTimeout } from "@/lib/ai/timeout";
 import { fetchWebGroundingContext, type SearchResult } from "@/lib/ai/web-search";
 import {
   formatDocumentsForPrompt,
@@ -14,6 +15,8 @@ import {
   type AttachmentPayload,
 } from "@/lib/files/document-extractor";
 import { GoogleGenAI } from "@google/genai";
+
+const PROVIDER_FIRST_RESPONSE_TIMEOUT_MS = 45_000;
 
 function cleanSourceTitle(value: string | undefined, fallback: string) {
   const cleaned = (value || '').replace(/[\[\]\n\r]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -64,10 +67,10 @@ export async function POST(req: NextRequest) {
     }
 
     const requiresNativeMultimodal = currentAttachments.some((attachment) => isGeminiNativeAttachment(attachment));
-    const routePlan = await resolveRoutePlan(requestedModel, requiresNativeMultimodal);
+    const routePlan = await resolveRoutePlan(requestedModel, requiresNativeMultimodal, message || '');
 
     if (!routePlan.primary) {
-      return new Response(JSON.stringify({ error: "No usable AI model is configured for this request. Open Admin > Providers and run Test & Discover." }), {
+      return new Response(JSON.stringify({ error: "No usable AI model is configured for this request. Open Admin > Providers and Smart Routing." }), {
         status: 503,
         headers: { "Content-Type": "application/json" }
       });
@@ -95,6 +98,10 @@ export async function POST(req: NextRequest) {
         let totalOutputChars = 0;
 
         for (const candidate of executionChain) {
+          const candidateStartedAt = Date.now();
+          let firstTokenAt: number | null = null;
+          let candidateOutputChars = 0;
+
           try {
             failoverHappened = candidate.connectionId !== routePlan.primary?.connectionId;
 
@@ -181,18 +188,28 @@ export async function POST(req: NextRequest) {
                 parts: userParts
               });
 
-              const geminiRes = await ai.models.generateContentStream({
-                model: candidate.modelId,
-                contents: geminiContents,
-                config: geminiConfig,
-              });
+              const geminiRes = await withTimeout(
+                ai.models.generateContentStream({
+                  model: candidate.modelId,
+                  contents: geminiContents,
+                  config: geminiConfig,
+                }),
+                PROVIDER_FIRST_RESPONSE_TIMEOUT_MS,
+                `${candidate.name} stream start`,
+              );
 
               const groundedSources = new Map<string, SearchResult>();
 
-              for await (const chunk of geminiRes) {
+              for await (const chunk of withFirstChunkTimeout(
+                geminiRes,
+                PROVIDER_FIRST_RESPONSE_TIMEOUT_MS,
+                candidate.name,
+              )) {
                 const text = chunk.text;
                 if (text) {
+                  if (firstTokenAt === null) firstTokenAt = Date.now();
                   totalOutputChars += text.length;
+                  candidateOutputChars += text.length;
                   controller.enqueue(
                     encoder.encode(`data: ${JSON.stringify({ type: 'delta', text })}\n\n`)
                   );
@@ -224,8 +241,14 @@ export async function POST(req: NextRequest) {
                 combinedPrompt
               );
 
-              for await (const deltaText of streamGen) {
+              for await (const deltaText of withFirstChunkTimeout(
+                streamGen,
+                PROVIDER_FIRST_RESPONSE_TIMEOUT_MS,
+                candidate.name,
+              )) {
+                if (firstTokenAt === null) firstTokenAt = Date.now();
                 totalOutputChars += deltaText.length;
+                candidateOutputChars += deltaText.length;
                 controller.enqueue(
                   encoder.encode(`data: ${JSON.stringify({ type: 'delta', text: deltaText })}\n\n`)
                 );
@@ -236,13 +259,15 @@ export async function POST(req: NextRequest) {
               const sourceAppendix = formatSourceAppendix(responseSources);
               if (sourceAppendix) {
                 totalOutputChars += sourceAppendix.length;
+                candidateOutputChars += sourceAppendix.length;
                 controller.enqueue(
                   encoder.encode(`data: ${JSON.stringify({ type: 'delta', text: sourceAppendix })}\n\n`)
                 );
               }
             }
 
-            await recordRuntimeModelSuccess(candidate.connectionId);
+            const learnedLatencyMs = (firstTokenAt ?? Date.now()) - candidateStartedAt;
+            await recordRuntimeModelSuccess(candidate.connectionId, learnedLatencyMs);
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`));
             executionSucceeded = true;
 
@@ -264,6 +289,17 @@ export async function POST(req: NextRequest) {
           } catch (err: any) {
             await recordRuntimeModelFailure(candidate.connectionId, err);
             console.warn(`[Stream Failover] Error on ${candidate.name} (${candidate.modelId}):`, err.message);
+
+            if (candidateOutputChars > 0) {
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify({
+                  type: 'error',
+                  error: 'The active model stopped mid-response. Please retry so AbhiAI can choose another healthy model.'
+                })}\n\n`)
+              );
+              executionSucceeded = true;
+              break;
+            }
           }
         }
 

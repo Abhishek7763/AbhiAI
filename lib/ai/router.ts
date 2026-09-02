@@ -1,8 +1,8 @@
 import type { AIConnection } from '@/lib/connections';
 import { listRuntimeConnections } from '@/lib/data/ai-config';
-import { getRoutingConfig } from '@/lib/data/routing-config';
+import { getRoutingConfig, type RoutingConfig } from '@/lib/data/routing-config';
 import { getAbhiAIModeInstruction } from '@/lib/ai/modes';
-import { listCoolingRuntimeModelIds } from '@/lib/ai/runtime-health';
+import { listRuntimeRoutingSignals, type RuntimeRoutingSignal } from '@/lib/ai/runtime-health';
 
 export interface RouteCandidate {
   connectionId: string;
@@ -19,6 +19,20 @@ export interface SmartRoutePlan {
   primary: RouteCandidate | null;
   fallbacks: RouteCandidate[];
 }
+
+type RequestIntent = {
+  coding: boolean;
+  reasoning: boolean;
+  multimodal: boolean;
+  speedFriendly: boolean;
+};
+
+type ScoredConnection = {
+  connection: AIConnection;
+  score: number;
+};
+
+const MAX_CANDIDATES_PER_REQUEST = 6;
 
 function toCandidate(connection: AIConnection, isPrimary = false): RouteCandidate {
   const modeInstruction = getAbhiAIModeInstruction({
@@ -38,84 +52,224 @@ function toCandidate(connection: AIConnection, isPrimary = false): RouteCandidat
   };
 }
 
-function orderedAutoPool(
-  connections: AIConnection[],
-  preferredModelRecordId: string | null,
-  poolModelRecordIds: string[],
-) {
-  const byId = new Map(connections.map((connection) => [connection.id, connection]));
-  const ordered: AIConnection[] = [];
-  const seen = new Set<string>();
+function parseTimestamp(value: string | null | undefined) {
+  if (!value) return null;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
 
-  const push = (id: string | null | undefined) => {
-    if (!id || seen.has(id)) return;
-    const connection = byId.get(id);
-    if (!connection) return;
-    seen.add(id);
-    ordered.push(connection);
+function isCooling(signal: RuntimeRoutingSignal | undefined, now = Date.now()) {
+  const cooldownUntil = parseTimestamp(signal?.cooldownUntil);
+  return cooldownUntil !== null && cooldownUntil > now;
+}
+
+function detectIntent(requestText: string, requiresMultimodal: boolean): RequestIntent {
+  const text = requestText.toLowerCase();
+  const coding = /\b(code|coding|coder|program|programming|html|css|javascript|typescript|python|java|kotlin|swift|sql|api|react|next\.?js|node\.?js|debug|bug|function|script|website|webapp|web app)\b/i.test(text)
+    || /code do|code likh|app bana|website bana|error fix|bug fix/i.test(text);
+  const reasoning = /\b(reason|reasoning|analy[sz]e|analysis|compare|solve|proof|math|calculate|architecture|strategy|plan|explain|why|logic|deep)\b/i.test(text)
+    || /kyu|kaise|samjha|detail|tulna|hal karo|solve karo/i.test(text);
+
+  return {
+    coding,
+    reasoning,
+    multimodal: requiresMultimodal,
+    speedFriendly: !coding && !reasoning && !requiresMultimodal && text.trim().length < 220,
   };
+}
 
-  push(preferredModelRecordId);
-  for (const id of poolModelRecordIds) push(id);
+function capabilityBonus(
+  connection: AIConnection,
+  signal: RuntimeRoutingSignal | undefined,
+  intent: RequestIntent,
+) {
+  const capabilities = new Set((signal?.capabilities ?? []).map((item) => item.toLowerCase()));
+  const identity = `${connection.name} ${connection.modelId}`.toLowerCase();
+  let score = 0;
 
-  // If the admin has not configured a pool yet, preserve a safe working default.
-  if (ordered.length === 0) {
-    push(connections.find((connection) => connection.modelId === 'gemini-3.7-flash')?.id);
-    push(connections.find((connection) => connection.modelId === 'gemini-3.6-flash')?.id);
-    push(connections.find((connection) => connection.modelId === 'gemini-3.5-flash-lite')?.id);
+  if (intent.coding) {
+    if (capabilities.has('coding') || capabilities.has('code') || /coder|coding|code|qwen.*coder/.test(identity)) score += 40;
+    else if (capabilities.has('reasoning')) score += 8;
   }
 
-  // Keep other runtime-eligible models as last-resort failovers without overriding
-  // the admin's preferred/default-pool ordering.
-  for (const connection of connections) push(connection.id);
-  return ordered;
+  if (intent.reasoning) {
+    if (capabilities.has('reasoning') || capabilities.has('thinking')) score += 30;
+    if (/reason|thinking|deepseek.*r1|\br1\b/.test(identity)) score += 18;
+  }
+
+  if (intent.multimodal) {
+    if (
+      capabilities.has('vision') ||
+      capabilities.has('image') ||
+      capabilities.has('document') ||
+      capabilities.has('pdf')
+    ) score += 35;
+    if (connection.providerId === 'google') score += 8;
+  }
+
+  if (intent.speedFriendly) {
+    if (capabilities.has('fast')) score += 12;
+    if (/flash|lite|mini|small|8b/.test(identity)) score += 8;
+  }
+
+  return score;
+}
+
+function healthScore(signal: RuntimeRoutingSignal | undefined) {
+  if (!signal) return 0;
+  let score = 0;
+  const now = Date.now();
+  const lastSuccess = parseTimestamp(signal.lastSuccessAt);
+  const lastFailure = parseTimestamp(signal.lastFailureAt);
+
+  if (lastSuccess !== null) {
+    const successAge = now - lastSuccess;
+    if (successAge < 15 * 60_000) score += 18;
+    else if (successAge < 2 * 60 * 60_000) score += 10;
+    else if (successAge < 24 * 60 * 60_000) score += 4;
+  }
+
+  if (lastFailure !== null && (lastSuccess === null || lastFailure > lastSuccess)) {
+    score -= 22;
+  }
+
+  score -= Math.min(32, signal.consecutiveFailures * 8);
+
+  const latency = signal.avgLatencyMs ?? signal.lastLatencyMs;
+  if (latency !== null) {
+    if (latency <= 1_000) score += 24;
+    else if (latency <= 2_500) score += 18;
+    else if (latency <= 5_000) score += 12;
+    else if (latency <= 10_000) score += 5;
+    else if (latency > 20_000) score -= 10;
+  }
+
+  return score;
+}
+
+function scoreConnection(
+  connection: AIConnection,
+  signal: RuntimeRoutingSignal | undefined,
+  routingConfig: RoutingConfig,
+  intent: RequestIntent,
+) {
+  let score = 100;
+  const poolIndex = routingConfig.poolModelRecordIds.indexOf(connection.id);
+  const hasConfiguredPool = routingConfig.poolModelRecordIds.length > 0;
+
+  if (poolIndex >= 0) {
+    score += 45;
+    score += Math.max(0, 20 - poolIndex);
+  } else if (hasConfiguredPool) {
+    score -= 35;
+  }
+
+  if (routingConfig.preferredModelRecordId === connection.id) score += 20;
+
+  const priority = signal?.priority ?? 100;
+  score += Math.max(-10, 18 - Math.min(priority, 28));
+  score += healthScore(signal);
+  score += capabilityBonus(connection, signal, intent);
+
+  return score;
+}
+
+function rankConnections(
+  connections: AIConnection[],
+  signalById: Map<string, RuntimeRoutingSignal>,
+  routingConfig: RoutingConfig,
+  intent: RequestIntent,
+): ScoredConnection[] {
+  return connections
+    .map((connection) => ({
+      connection,
+      score: scoreConnection(connection, signalById.get(connection.id), routingConfig, intent),
+    }))
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      const aPriority = signalById.get(a.connection.id)?.priority ?? 100;
+      const bPriority = signalById.get(b.connection.id)?.priority ?? 100;
+      if (aPriority !== bPriority) return aPriority - bPriority;
+      return a.connection.name.localeCompare(b.connection.name);
+    });
+}
+
+function selectDiverseCandidates(scored: ScoredConnection[]) {
+  if (scored.length <= 1) return scored.slice(0, MAX_CANDIDATES_PER_REQUEST);
+
+  const primary = scored[0];
+  const rest = scored.slice(1);
+  const differentProvider = rest.find(
+    (item) => (item.connection.providerId || guessProviderId(item.connection.baseUrl, item.connection.modelId))
+      !== (primary.connection.providerId || guessProviderId(primary.connection.baseUrl, primary.connection.modelId)),
+  );
+
+  const ordered = [primary];
+  if (differentProvider) ordered.push(differentProvider);
+  for (const item of rest) {
+    if (differentProvider && item.connection.id === differentProvider.connection.id) continue;
+    ordered.push(item);
+  }
+
+  return ordered.slice(0, MAX_CANDIDATES_PER_REQUEST);
 }
 
 /**
- * Resolves the primary connection and ordered fallback models from the
- * current Supabase provider/model configuration. Runtime secrets are
- * decrypted server-side and never returned to the browser.
+ * Resolves the primary connection and a bounded set of smart fallbacks.
+ * AbhiAI Auto ranks the full admin pool by health, recent success, latency,
+ * capabilities and priority, while Free Guard/cooldown filtering stays enforced.
  */
 export async function resolveRoutePlan(
   requestedModelOrAlias: string,
   requiresMultimodal: boolean = false,
+  requestText: string = '',
 ): Promise<SmartRoutePlan> {
-  const [runtimeConnections, coolingModelIds, routingConfig] = await Promise.all([
+  const [runtimeConnections, routingConfig, routingSignals] = await Promise.all([
     listRuntimeConnections(),
-    listCoolingRuntimeModelIds(),
     getRoutingConfig(),
+    listRuntimeRoutingSignals(),
   ]);
 
-  const allConnections = runtimeConnections.filter(
-    (connection) => connection.isActive && connection.apiKey && !coolingModelIds.has(connection.id),
+  const signalById = new Map(routingSignals.map((signal) => [signal.id, signal]));
+  const now = Date.now();
+  const healthyRuntime = runtimeConnections.filter(
+    (connection) => connection.isActive && connection.apiKey && !isCooling(signalById.get(connection.id), now),
   );
 
   const compatibleConnections = requiresMultimodal
-    ? allConnections.filter((connection) => connection.providerId === 'google')
-    : allConnections;
+    ? healthyRuntime.filter((connection) => connection.providerId === 'google')
+    : healthyRuntime;
 
   if (compatibleConnections.length === 0) {
     return { primary: null, fallbacks: [] };
   }
 
+  const intent = detectIntent(requestText, requiresMultimodal);
   const isAutoRequest = !requestedModelOrAlias || requestedModelOrAlias === 'default' || requestedModelOrAlias === 'auto';
 
   if (isAutoRequest) {
-    const ordered = orderedAutoPool(
-      compatibleConnections,
-      routingConfig.preferredModelRecordId,
-      routingConfig.poolModelRecordIds,
+    const poolSet = new Set(routingConfig.poolModelRecordIds);
+    const strictPoolActive = routingConfig.strictPool && poolSet.size > 0;
+    const autoCandidates = strictPoolActive
+      ? compatibleConnections.filter((connection) => poolSet.has(connection.id))
+      : compatibleConnections;
+
+    if (autoCandidates.length === 0) {
+      return { primary: null, fallbacks: [] };
+    }
+
+    const selected = selectDiverseCandidates(
+      rankConnections(autoCandidates, signalById, routingConfig, intent),
     );
-    const [primaryConn, ...fallbackConnections] = ordered;
-    if (!primaryConn) return { primary: null, fallbacks: [] };
+    const [primary, ...fallbacks] = selected;
 
     return {
-      primary: toCandidate(primaryConn, true),
-      fallbacks: fallbackConnections.map((connection) => toCandidate(connection)),
+      primary: primary ? toCandidate(primary.connection, true) : null,
+      fallbacks: fallbacks.map((item) => toCandidate(item.connection)),
     };
   }
 
-  let primaryConn = compatibleConnections.find(
+  const requested = compatibleConnections.find(
     (connection) =>
       connection.id === requestedModelOrAlias ||
       connection.assignedAlias === requestedModelOrAlias ||
@@ -123,15 +277,26 @@ export async function resolveRoutePlan(
       connection.modelId === requestedModelOrAlias,
   );
 
-  if (!primaryConn) primaryConn = compatibleConnections[0];
+  const rankedFallbacks = selectDiverseCandidates(
+    rankConnections(
+      compatibleConnections.filter((connection) => connection.id !== requested?.id),
+      signalById,
+      routingConfig,
+      intent,
+    ),
+  );
 
-  const fallbacks = compatibleConnections
-    .filter((connection) => connection.id !== primaryConn?.id)
-    .map((connection) => toCandidate(connection));
+  if (requested) {
+    return {
+      primary: toCandidate(requested, true),
+      fallbacks: rankedFallbacks.slice(0, MAX_CANDIDATES_PER_REQUEST - 1).map((item) => toCandidate(item.connection)),
+    };
+  }
 
+  const [best, ...fallbacks] = rankedFallbacks;
   return {
-    primary: toCandidate(primaryConn, true),
-    fallbacks,
+    primary: best ? toCandidate(best.connection, true) : null,
+    fallbacks: fallbacks.slice(0, MAX_CANDIDATES_PER_REQUEST - 1).map((item) => toCandidate(item.connection)),
   };
 }
 

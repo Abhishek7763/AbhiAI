@@ -9,6 +9,21 @@ type RuntimeState = {
   lastFailureAt?: string | null;
   lastErrorCode?: string | number | null;
   consecutiveFailures?: number;
+  lastLatencyMs?: number | null;
+  avgLatencyMs?: number | null;
+};
+
+export type RuntimeRoutingSignal = {
+  id: string;
+  priority: number;
+  capabilities: string[];
+  cooldownUntil: string | null;
+  lastSuccessAt: string | null;
+  lastFailureAt: string | null;
+  lastErrorCode: string | number | null;
+  consecutiveFailures: number;
+  lastLatencyMs: number | null;
+  avgLatencyMs: number | null;
 };
 
 function cooldownMsForError(code: string | number, failures: number) {
@@ -32,10 +47,19 @@ async function readLimits(modelRecordId: string) {
   return (data?.limits && typeof data.limits === 'object' ? data.limits : {}) as Record<string, any>;
 }
 
-export function runtimeCooldownUntil(limits: unknown): string | null {
-  if (!limits || typeof limits !== 'object') return null;
+function runtimeStateFromLimits(limits: unknown): RuntimeState {
+  if (!limits || typeof limits !== 'object') return {};
   const runtime = (limits as Record<string, any>).runtime;
-  const value = runtime?.cooldownUntil;
+  return runtime && typeof runtime === 'object' ? runtime as RuntimeState : {};
+}
+
+function validNumber(value: unknown): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+export function runtimeCooldownUntil(limits: unknown): string | null {
+  const value = runtimeStateFromLimits(limits).cooldownUntil;
   return typeof value === 'string' && value ? value : null;
 }
 
@@ -44,6 +68,37 @@ export function isRuntimeModelCoolingDown(limits: unknown, now = Date.now()) {
   if (!until) return false;
   const timestamp = Date.parse(until);
   return Number.isFinite(timestamp) && timestamp > now;
+}
+
+export async function listRuntimeRoutingSignals(): Promise<RuntimeRoutingSignal[]> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from('ai_models')
+    .select('id, priority, capabilities, limits')
+    .eq('is_active', true);
+
+  if (error) {
+    console.warn('Could not read runtime routing signals:', error.message);
+    return [];
+  }
+
+  return (data ?? []).map((row: any) => {
+    const runtime = runtimeStateFromLimits(row.limits);
+    return {
+      id: row.id,
+      priority: Number.isFinite(Number(row.priority)) ? Number(row.priority) : 100,
+      capabilities: Array.isArray(row.capabilities)
+        ? row.capabilities.filter((item: unknown): item is string => typeof item === 'string')
+        : [],
+      cooldownUntil: typeof runtime.cooldownUntil === 'string' ? runtime.cooldownUntil : null,
+      lastSuccessAt: typeof runtime.lastSuccessAt === 'string' ? runtime.lastSuccessAt : null,
+      lastFailureAt: typeof runtime.lastFailureAt === 'string' ? runtime.lastFailureAt : null,
+      lastErrorCode: runtime.lastErrorCode ?? null,
+      consecutiveFailures: Math.max(0, Number(runtime.consecutiveFailures || 0)),
+      lastLatencyMs: validNumber(runtime.lastLatencyMs),
+      avgLatencyMs: validNumber(runtime.avgLatencyMs),
+    };
+  });
 }
 
 export async function listCoolingRuntimeModelIds() {
@@ -66,11 +121,18 @@ export async function listCoolingRuntimeModelIds() {
   );
 }
 
-export async function recordRuntimeModelSuccess(modelRecordId: string) {
+export async function recordRuntimeModelSuccess(modelRecordId: string, latencyMs?: number) {
   try {
     const limits = await readLimits(modelRecordId);
-    const previous = (limits.runtime && typeof limits.runtime === 'object' ? limits.runtime : {}) as RuntimeState;
+    const previous = runtimeStateFromLimits(limits);
     const now = new Date().toISOString();
+    const measuredLatency = validNumber(latencyMs);
+    const previousAverage = validNumber(previous.avgLatencyMs);
+    const avgLatencyMs = measuredLatency === null
+      ? previousAverage
+      : previousAverage === null
+        ? Math.round(measuredLatency)
+        : Math.round(previousAverage * 0.7 + measuredLatency * 0.3);
 
     const supabase = createAdminClient();
     const { error } = await supabase
@@ -84,6 +146,8 @@ export async function recordRuntimeModelSuccess(modelRecordId: string) {
             lastSuccessAt: now,
             lastErrorCode: null,
             consecutiveFailures: 0,
+            lastLatencyMs: measuredLatency === null ? previous.lastLatencyMs ?? null : Math.round(measuredLatency),
+            avgLatencyMs,
           },
         },
       })
@@ -98,7 +162,7 @@ export async function recordRuntimeModelSuccess(modelRecordId: string) {
 export async function recordRuntimeModelFailure(modelRecordId: string, error: unknown) {
   try {
     const limits = await readLimits(modelRecordId);
-    const previous = (limits.runtime && typeof limits.runtime === 'object' ? limits.runtime : {}) as RuntimeState;
+    const previous = runtimeStateFromLimits(limits);
     const message = error instanceof Error ? error.message : String(error || 'Unknown AI model error');
     const diagnosis = diagnoseAIError(message);
     const consecutiveFailures = Math.max(0, Number(previous.consecutiveFailures || 0)) + 1;

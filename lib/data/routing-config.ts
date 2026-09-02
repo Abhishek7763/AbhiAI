@@ -7,6 +7,7 @@ export type RoutingConfig = {
   strategy: 'smart-auto';
   preferredModelRecordId: string | null;
   poolModelRecordIds: string[];
+  strictPool: boolean;
 };
 
 export type RoutingModelOption = {
@@ -26,6 +27,7 @@ const DEFAULT_ROUTING_CONFIG: RoutingConfig = {
   strategy: 'smart-auto',
   preferredModelRecordId: null,
   poolModelRecordIds: [],
+  strictPool: false,
 };
 
 function sanitizeConfig(value: unknown): RoutingConfig {
@@ -41,6 +43,7 @@ function sanitizeConfig(value: unknown): RoutingConfig {
         ? raw.preferredModelRecordId
         : null,
     poolModelRecordIds: Array.from(new Set(pool)),
+    strictPool: raw.strictPool === true,
   };
 }
 
@@ -111,13 +114,14 @@ export async function saveRoutingConfig(input: Partial<RoutingConfig>): Promise<
     strategy: 'smart-auto',
     preferredModelRecordId: requestedPreferred,
     poolModelRecordIds,
+    strictPool: input.strictPool === true && poolModelRecordIds.length > 0,
   };
 
   const supabase = createAdminClient();
   const { error } = await supabase.from('app_settings').upsert({
     key: 'routing',
     value: config,
-    description: 'AbhiAI Smart Auto preferred model and ordered failover pool.',
+    description: 'AbhiAI Smart Auto model pool, preferred-model boost, strict-pool mode and automatic failover routing.',
   });
   if (error) throw new Error(error.message);
 
