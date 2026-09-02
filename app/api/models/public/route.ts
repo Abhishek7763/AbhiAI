@@ -5,7 +5,7 @@ import { getStoredModels } from '@/lib/data/admin-config';
 
 export async function GET() {
   try {
-    const publicModels = (await getStoredModels())
+    const brandedModels = (await getStoredModels())
       .filter((model) => {
         if (!model.isActive || !model.isPublic || !isBrandedRuntimeModel(model.id)) return false;
         const billing = classifyModelBilling(model.providerId, model.id);
@@ -16,7 +16,12 @@ export async function GET() {
         name: getBrandedModelName(model.id, model.alias),
       }));
 
-    return NextResponse.json({ models: publicModels });
+    return NextResponse.json({
+      models: [
+        { id: 'auto', name: 'AbhiAI Auto' },
+        ...brandedModels,
+      ],
+    });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Failed to load models' }, { status: 503 });
   }
