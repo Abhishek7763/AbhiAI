@@ -46,6 +46,26 @@ export function isRuntimeModelCoolingDown(limits: unknown, now = Date.now()) {
   return Number.isFinite(timestamp) && timestamp > now;
 }
 
+export async function listCoolingRuntimeModelIds() {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from('ai_models')
+    .select('id, limits')
+    .eq('is_active', true);
+
+  if (error) {
+    console.warn('Could not read runtime model cooldowns:', error.message);
+    return new Set<string>();
+  }
+
+  const now = Date.now();
+  return new Set(
+    (data ?? [])
+      .filter((row: any) => isRuntimeModelCoolingDown(row.limits, now))
+      .map((row: any) => row.id as string),
+  );
+}
+
 export async function recordRuntimeModelSuccess(modelRecordId: string) {
   try {
     const limits = await readLimits(modelRecordId);
