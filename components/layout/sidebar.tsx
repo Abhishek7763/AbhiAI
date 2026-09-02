@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { Plus, MessageSquare, Settings, Search, Clock, Trash2, X, Pin, Edit2, Check, Sparkles, Image as ImageIcon } from 'lucide-react';
+import { Plus, MessageSquare, Settings, Search, Clock, Trash2, X, Pin, Edit2, Check, Sparkles } from 'lucide-react';
 import { ChatSession } from '@/hooks/use-chat-history';
 import { AbhiLogo } from '@/components/brand/logo';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
@@ -35,6 +35,7 @@ export default function Sidebar({
   const [searchQuery, setSearchQuery] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const filteredSessions = sessions.filter(s => 
     s.title.toLowerCase().includes(searchQuery.toLowerCase())
@@ -45,6 +46,7 @@ export default function Sidebar({
 
   const startEditing = (e: React.MouseEvent, session: ChatSession) => {
     e.stopPropagation();
+    setDeleteConfirmId(null);
     setEditingId(session.id);
     setEditTitle(session.title);
   };
@@ -57,9 +59,23 @@ export default function Sidebar({
     setEditingId(null);
   };
 
+  const handleOpenSession = (sessionId: string) => {
+    setDeleteConfirmId(null);
+    setEditingId(null);
+    onSelectSession(sessionId);
+    onClose();
+  };
+
+  const handleDeleteSession = (e: React.MouseEvent, sessionId: string) => {
+    e.stopPropagation();
+    onDeleteSession(sessionId);
+    setDeleteConfirmId(null);
+  };
+
   const renderSessionItem = (session: ChatSession) => {
     const isEditing = editingId === session.id;
     const isCurrent = currentSessionId === session.id;
+    const isConfirmingDelete = deleteConfirmId === session.id;
 
     return (
       <div 
@@ -73,20 +89,21 @@ export default function Sidebar({
         {isEditing ? (
           <form 
             onSubmit={(e) => handleSaveRename(e, session.id)} 
-            className="flex-1 flex items-center gap-1.5"
+            className="flex-1 flex items-center gap-1.5 min-w-0"
             onClick={(e) => e.stopPropagation()}
           >
             <input
               type="text"
               value={editTitle}
               onChange={(e) => setEditTitle(e.target.value)}
-              className="flex-1 bg-white dark:bg-zinc-950 px-2 py-1 rounded text-xs border border-zinc-300 dark:border-zinc-700 outline-none"
+              className="flex-1 min-w-0 bg-white dark:bg-zinc-950 px-2 py-1 rounded text-xs border border-zinc-300 dark:border-zinc-700 outline-none"
               autoFocus
             />
             <button
               type="button"
               onClick={(e) => handleSaveRename(e, session.id)}
               className="p-1 text-emerald-600 hover:text-emerald-700"
+              aria-label="Save chat name"
             >
               <Check className="w-3.5 h-3.5" />
             </button>
@@ -94,45 +111,75 @@ export default function Sidebar({
               type="button"
               onClick={() => setEditingId(null)}
               className="p-1 text-zinc-400 hover:text-zinc-600"
+              aria-label="Cancel rename"
             >
               <X className="w-3.5 h-3.5" />
             </button>
           </form>
+        ) : isConfirmingDelete ? (
+          <div className="flex-1 flex items-center justify-between gap-2 min-w-0">
+            <span className="text-xs font-medium text-red-600 dark:text-red-400 truncate">Delete this chat?</span>
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={(e) => handleDeleteSession(e, session.id)}
+                className="px-2 py-1 rounded-lg bg-red-600 text-white text-[11px] font-semibold hover:bg-red-700 transition-colors"
+              >
+                Delete
+              </button>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setDeleteConfirmId(null); }}
+                className="p-1.5 rounded-lg text-zinc-500 hover:bg-zinc-300/60 dark:hover:bg-zinc-700/60"
+                aria-label="Cancel delete"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
         ) : (
           <>
             <button 
-              onClick={() => { onSelectSession(session.id); onClose(); }}
-              className="flex-1 flex items-center gap-2.5 text-left truncate"
+              type="button"
+              onClick={() => handleOpenSession(session.id)}
+              className="flex-1 min-w-0 flex items-center gap-2.5 text-left py-0.5"
+              title={`Open ${session.title}`}
             >
-              <MessageSquare className="w-4 h-4 text-zinc-400 shrink-0" />
+              <MessageSquare className={`w-4 h-4 shrink-0 ${isCurrent ? 'text-blue-500 dark:text-blue-400' : 'text-zinc-400'}`} />
               <span className="truncate">{session.title}</span>
             </button>
 
-            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className="flex items-center gap-0.5 shrink-0 ml-1">
               {onTogglePinSession && (
                 <button 
+                  type="button"
                   onClick={(e) => { e.stopPropagation(); onTogglePinSession(session.id); }}
-                  className={`p-1 rounded hover:bg-zinc-300/50 dark:hover:bg-zinc-700/50 ${
-                    session.isPinned ? 'text-amber-500 opacity-100' : 'text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200'
+                  className={`hidden md:inline-flex p-1.5 rounded-lg hover:bg-zinc-300/50 dark:hover:bg-zinc-700/50 transition-colors ${
+                    session.isPinned ? 'text-amber-500' : 'text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
                   }`}
-                  title={session.isPinned ? "Unpin chat" : "Pin chat"}
+                  title={session.isPinned ? 'Unpin chat' : 'Pin chat'}
+                  aria-label={session.isPinned ? 'Unpin chat' : 'Pin chat'}
                 >
                   <Pin className="w-3.5 h-3.5" />
                 </button>
               )}
               {onRenameSession && (
                 <button 
+                  type="button"
                   onClick={(e) => startEditing(e, session)}
-                  className="p-1 rounded hover:bg-zinc-300/50 dark:hover:bg-zinc-700/50 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
-                  title="Rename"
+                  className="hidden md:inline-flex p-1.5 rounded-lg hover:bg-zinc-300/50 dark:hover:bg-zinc-700/50 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-all"
+                  title="Rename chat"
+                  aria-label="Rename chat"
                 >
                   <Edit2 className="w-3.5 h-3.5" />
                 </button>
               )}
               <button 
-                onClick={(e) => { e.stopPropagation(); onDeleteSession(session.id); }}
-                className="p-1 rounded hover:bg-zinc-300/50 dark:hover:bg-zinc-700/50 text-zinc-400 hover:text-red-500"
-                title="Delete Chat"
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setEditingId(null); setDeleteConfirmId(session.id); }}
+                className="inline-flex p-1.5 rounded-lg text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
+                title="Delete chat"
+                aria-label={`Delete ${session.title}`}
               >
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
@@ -165,6 +212,7 @@ export default function Sidebar({
           <button 
             onClick={onClose} 
             className="p-1.5 md:hidden text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 rounded-lg hover:bg-zinc-200/50 dark:hover:bg-zinc-800/50 transition-colors"
+            aria-label="Close navigation"
           >
             <X className="w-5 h-5" />
           </button>
@@ -226,6 +274,8 @@ export default function Sidebar({
             </div>
             {filteredSessions.length === 0 ? (
               <div className="px-2 py-3 text-xs text-zinc-400 italic">No conversations yet</div>
+            ) : recentSessions.length === 0 && pinnedSessions.length > 0 ? (
+              <div className="px-2 py-3 text-xs text-zinc-400 italic">All visible chats are pinned</div>
             ) : (
               <div className="space-y-1">
                 {recentSessions.map(renderSessionItem)}
