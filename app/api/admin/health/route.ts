@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { listConnections, listRuntimeConnections } from '@/lib/data/ai-config';
 import { getProviderAdapter } from '@/lib/ai/providers/registry';
 import { diagnoseAIError } from '@/lib/ai/error-doctor';
+import { classifyModelBilling } from '@/lib/ai/free-guard';
 
 interface ProviderHealthResult {
   status: 'HEALTHY' | 'DEGRADED' | 'RATE_LIMITED' | 'AUTH_ERROR' | 'OFFLINE' | 'CONFIG_ERROR';
@@ -22,13 +23,20 @@ function providerIdFor(connection: { providerId?: string; baseUrl: string; model
   return 'openai-compatible';
 }
 
+function isSafeRuntimeModel(connection: { providerId?: string; baseUrl: string; modelId: string }) {
+  const billing = classifyModelBilling(providerIdFor(connection), connection.modelId);
+  return billing === 'FREE_VERIFIED' || billing === 'FREE_LIMITED';
+}
+
 export async function GET() {
   const [configuredConnections, runtimeConnections] = await Promise.all([
     listConnections(),
     listRuntimeConnections(),
   ]);
 
-  const activeConfigured = configuredConnections.filter((connection) => connection.isActive);
+  const activeConfigured = configuredConnections.filter(
+    (connection) => connection.isActive && isSafeRuntimeModel(connection),
+  );
   const runtimeById = new Map(runtimeConnections.map((connection) => [connection.id, connection]));
   const providerChecks = new Map<string, Promise<ProviderHealthResult>>();
 
