@@ -40,7 +40,6 @@ function formatSourceAppendix(sources: SearchResult[]) {
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
   let requestedModel = 'default';
-  let executedCandidateName = 'Unknown';
   let failoverHappened = false;
 
   try {
@@ -78,8 +77,6 @@ export async function POST(req: NextRequest) {
       ...routePlan.fallbacks
     ];
 
-    // Google candidates use Gemini's native Google Search grounding. Only fetch
-    // the lightweight external fallback if a non-Google candidate may execute.
     let fallbackWebContext = '';
     let fallbackWebSources: SearchResult[] = [];
     if (webSearch && message && executionChain.some((candidate) => candidate.providerId !== 'google')) {
@@ -98,7 +95,6 @@ export async function POST(req: NextRequest) {
 
         for (const candidate of executionChain) {
           try {
-            executedCandidateName = candidate.name;
             failoverHappened = candidate.connectionId !== routePlan.primary?.connectionId;
 
             if (!candidate.apiKey) {
@@ -250,6 +246,9 @@ export async function POST(req: NextRequest) {
 
             logUsageEvent({
               modelOrAlias: requestedModel,
+              executedModelName: candidate.name,
+              executedModelId: candidate.modelId,
+              connectionId: candidate.connectionId,
               provider: candidate.providerId,
               promptLength: (message || '').length,
               responseLength: totalOutputChars,
@@ -275,6 +274,7 @@ export async function POST(req: NextRequest) {
             failoverUsed: true,
             isPublic: true,
             status: 'error',
+            errorCode: 'ALL_CANDIDATES_FAILED',
           });
 
           controller.enqueue(
