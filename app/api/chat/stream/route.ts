@@ -25,16 +25,15 @@ export async function POST(req: NextRequest) {
     }
 
     const hasImages = Array.isArray(attachments) && attachments.some((a: any) => a.type?.startsWith('image/'));
-    const routePlan = resolveRoutePlan(requestedModel, hasImages);
+    const routePlan = await resolveRoutePlan(requestedModel, hasImages);
 
     if (!routePlan.primary) {
-      return new Response(JSON.stringify({ error: "No active AI providers configured. Please add a provider in Admin Connections." }), {
+      return new Response(JSON.stringify({ error: "No usable AI model is configured. Open Admin > Providers and run Test & Discover." }), {
         status: 503,
         headers: { "Content-Type": "application/json" }
       });
     }
 
-    // If web search is requested, fetch live web context
     let webContext = '';
     if (webSearch && message) {
       const searchRes = await fetchWebGroundingContext(message);
@@ -61,6 +60,10 @@ export async function POST(req: NextRequest) {
             executedCandidateName = candidate.name;
             failoverHappened = candidate.connectionId !== routePlan.primary?.connectionId;
 
+            if (!candidate.apiKey) {
+              throw new Error(`No runtime API key is available for ${candidate.name}`);
+            }
+
             const combinedPrompt = [
               globalInstructions,
               candidate.systemPrompt,
@@ -86,7 +89,6 @@ export async function POST(req: NextRequest) {
               attachments,
             });
 
-            // Send metadata header chunk to client
             controller.enqueue(
               encoder.encode(`data: ${JSON.stringify({
                 type: 'meta',
@@ -97,18 +99,16 @@ export async function POST(req: NextRequest) {
             );
 
             if (candidate.providerId === 'google') {
-              const ai = new GoogleGenAI({ apiKey: candidate.apiKey || process.env.GEMINI_API_KEY });
-              
+              const ai = new GoogleGenAI({ apiKey: candidate.apiKey });
+
               const geminiConfig: any = {
                 systemInstruction: combinedPrompt,
               };
 
-              // Enable search grounding if webSearch is enabled
               if (webSearch) {
                 geminiConfig.tools = [{ googleSearch: {} }];
               }
 
-              // Build multimodal contents for Gemini
               const geminiContents: any[] = [];
               if (Array.isArray(history)) {
                 for (const h of history) {
@@ -140,7 +140,7 @@ export async function POST(req: NextRequest) {
               });
 
               const geminiRes = await ai.models.generateContentStream({
-                model: candidate.modelId || 'gemini-2.5-flash',
+                model: candidate.modelId,
                 contents: geminiContents,
                 config: geminiConfig,
               });
@@ -171,11 +171,9 @@ export async function POST(req: NextRequest) {
               }
             }
 
-            // Stream completed successfully
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`));
             executionSucceeded = true;
 
-            // Log successful usage event
             logUsageEvent({
               modelOrAlias: requestedModel,
               provider: candidate.providerId,
@@ -189,7 +187,7 @@ export async function POST(req: NextRequest) {
 
             break;
           } catch (err: any) {
-            console.warn(`[Stream Failover] Error on ${candidate.name}:`, err.message);
+            console.warn(`[Stream Failover] Error on ${candidate.name} (${candidate.modelId}):`, err.message);
           }
         }
 
