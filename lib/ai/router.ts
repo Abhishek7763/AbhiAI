@@ -1,5 +1,6 @@
 import type { AIConnection } from '@/lib/connections';
 import { listRuntimeConnections } from '@/lib/data/ai-config';
+import { getRoutingConfig } from '@/lib/data/routing-config';
 import { getAbhiAIModeInstruction } from '@/lib/ai/modes';
 import { listCoolingRuntimeModelIds } from '@/lib/ai/runtime-health';
 
@@ -37,6 +38,39 @@ function toCandidate(connection: AIConnection, isPrimary = false): RouteCandidat
   };
 }
 
+function orderedAutoPool(
+  connections: AIConnection[],
+  preferredModelRecordId: string | null,
+  poolModelRecordIds: string[],
+) {
+  const byId = new Map(connections.map((connection) => [connection.id, connection]));
+  const ordered: AIConnection[] = [];
+  const seen = new Set<string>();
+
+  const push = (id: string | null | undefined) => {
+    if (!id || seen.has(id)) return;
+    const connection = byId.get(id);
+    if (!connection) return;
+    seen.add(id);
+    ordered.push(connection);
+  };
+
+  push(preferredModelRecordId);
+  for (const id of poolModelRecordIds) push(id);
+
+  // If the admin has not configured a pool yet, preserve a safe working default.
+  if (ordered.length === 0) {
+    push(connections.find((connection) => connection.modelId === 'gemini-3.7-flash')?.id);
+    push(connections.find((connection) => connection.modelId === 'gemini-3.6-flash')?.id);
+    push(connections.find((connection) => connection.modelId === 'gemini-3.5-flash-lite')?.id);
+  }
+
+  // Keep other runtime-eligible models as last-resort failovers without overriding
+  // the admin's preferred/default-pool ordering.
+  for (const connection of connections) push(connection.id);
+  return ordered;
+}
+
 /**
  * Resolves the primary connection and ordered fallback models from the
  * current Supabase provider/model configuration. Runtime secrets are
@@ -46,9 +80,10 @@ export async function resolveRoutePlan(
   requestedModelOrAlias: string,
   requiresMultimodal: boolean = false,
 ): Promise<SmartRoutePlan> {
-  const [runtimeConnections, coolingModelIds] = await Promise.all([
+  const [runtimeConnections, coolingModelIds, routingConfig] = await Promise.all([
     listRuntimeConnections(),
     listCoolingRuntimeModelIds(),
+    getRoutingConfig(),
   ]);
 
   const allConnections = runtimeConnections.filter(
@@ -63,6 +98,23 @@ export async function resolveRoutePlan(
     return { primary: null, fallbacks: [] };
   }
 
+  const isAutoRequest = !requestedModelOrAlias || requestedModelOrAlias === 'default' || requestedModelOrAlias === 'auto';
+
+  if (isAutoRequest) {
+    const ordered = orderedAutoPool(
+      compatibleConnections,
+      routingConfig.preferredModelRecordId,
+      routingConfig.poolModelRecordIds,
+    );
+    const [primaryConn, ...fallbackConnections] = ordered;
+    if (!primaryConn) return { primary: null, fallbacks: [] };
+
+    return {
+      primary: toCandidate(primaryConn, true),
+      fallbacks: fallbackConnections.map((connection) => toCandidate(connection)),
+    };
+  }
+
   let primaryConn = compatibleConnections.find(
     (connection) =>
       connection.id === requestedModelOrAlias ||
@@ -71,21 +123,10 @@ export async function resolveRoutePlan(
       connection.modelId === requestedModelOrAlias,
   );
 
-  if (!primaryConn && (requestedModelOrAlias === 'default' || !requestedModelOrAlias)) {
-    primaryConn =
-      compatibleConnections.find((connection) => connection.modelId === 'gemini-3.7-flash') ||
-      compatibleConnections.find((connection) => connection.modelId === 'gemini-3.6-flash') ||
-      compatibleConnections.find((connection) => connection.modelId === 'gemini-3.5-flash-lite') ||
-      compatibleConnections[0];
-  }
-
-  if (!primaryConn) {
-    primaryConn = compatibleConnections[0];
-  }
+  if (!primaryConn) primaryConn = compatibleConnections[0];
 
   const fallbacks = compatibleConnections
     .filter((connection) => connection.id !== primaryConn?.id)
-    .slice(0, 3)
     .map((connection) => toCandidate(connection));
 
   return {
@@ -101,6 +142,8 @@ function guessProviderId(baseUrl: string, modelId: string): string {
   if (lowerUrl.includes('openrouter.ai')) return 'openrouter';
   if (lowerUrl.includes('groq.com')) return 'groq';
   if (lowerUrl.includes('together.xyz')) return 'together';
+  if (lowerUrl.includes('cerebras.ai')) return 'cerebras';
+  if (lowerUrl.includes('sambanova.ai')) return 'sambanova';
   if (lowerUrl.includes('google') || lowerModel.includes('gemini')) return 'google';
   return 'openai-compatible';
 }
