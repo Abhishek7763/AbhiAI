@@ -135,6 +135,76 @@ export async function listConnections(): Promise<AIConnection[]> {
   });
 }
 
+export async function listRuntimeConnections(): Promise<AIConnection[]> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from('ai_models')
+    .select('id, model_id, name, alias, capabilities, is_active, is_public, priority, created_at, ai_providers(id, slug, name, base_url, is_active, ai_api_keys(id, encrypted_key, encryption_iv, encryption_tag, encryption_version, status, priority))')
+    .eq('is_active', true)
+    .order('priority', { ascending: true })
+    .order('created_at', { ascending: false });
+  throwIfError(error);
+
+  const rows = (data ?? []) as any[];
+  const promptIds = rows.map((row) => `model:${row.id}`);
+  const promptMap = new Map<string, string>();
+
+  if (promptIds.length > 0) {
+    const { data: prompts, error: promptError } = await supabase
+      .from('system_instructions')
+      .select('id, system_prompt')
+      .in('id', promptIds);
+    throwIfError(promptError);
+    for (const prompt of prompts ?? []) {
+      promptMap.set(prompt.id, prompt.system_prompt || '');
+    }
+  }
+
+  const runtimeConnections: AIConnection[] = [];
+
+  for (const row of rows) {
+    const provider = row.ai_providers;
+    if (!provider?.is_active || !provider.slug || !provider.base_url) continue;
+
+    const billing = classifyModelBilling(provider.slug, row.model_id);
+    if (billing !== 'FREE_VERIFIED' && billing !== 'FREE_LIMITED') continue;
+
+    const activeKey = (provider.ai_api_keys ?? [])
+      .filter((key: any) => key.status === 'active')
+      .sort((a: any, b: any) => (a.priority ?? 100) - (b.priority ?? 100))[0];
+    if (!activeKey) continue;
+
+    let apiKey = '';
+    try {
+      apiKey = decryptApiKey({
+        encryptedKey: activeKey.encrypted_key,
+        iv: activeKey.encryption_iv,
+        tag: activeKey.encryption_tag,
+        version: activeKey.encryption_version,
+      });
+    } catch (error) {
+      console.error(`Failed to decrypt API key for provider ${provider.slug}:`, error instanceof Error ? error.message : error);
+      continue;
+    }
+
+    runtimeConnections.push({
+      id: row.id,
+      scope: row.is_public ? 'public' : 'personal',
+      assignedAlias: row.alias || undefined,
+      name: row.name,
+      baseUrl: provider.base_url,
+      apiKey,
+      hasApiKey: true,
+      providerId: provider.slug,
+      modelId: row.model_id,
+      systemPrompt: promptMap.get(`model:${row.id}`) || '',
+      isActive: true,
+    });
+  }
+
+  return runtimeConnections;
+}
+
 export async function saveConnection(input: ConnectionInput): Promise<AIConnection> {
   if (!input.name?.trim() || !input.modelId?.trim() || !input.baseUrl?.trim()) {
     throw new Error('Name, model ID, and base URL are required.');
