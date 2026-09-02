@@ -2,29 +2,38 @@ import { NextResponse } from "next/server";
 import { getInstructions } from "@/lib/instructions";
 import { resolveRoutePlan, RouteCandidate } from "@/lib/ai/router";
 import { getProviderAdapter } from "@/lib/ai/providers/registry";
-import { formatDocumentsForPrompt } from "@/lib/files/document-extractor";
+import {
+  formatDocumentsForPrompt,
+  isGeminiNativeAttachment,
+  validateInlineAttachments,
+  type AttachmentPayload,
+} from "@/lib/files/document-extractor";
 
 export async function POST(req: Request) {
   try {
     const { message, history, modelId, attachments } = await req.json();
+    const currentAttachments: AttachmentPayload[] = Array.isArray(attachments) ? attachments : [];
 
-    if (!message && (!attachments || attachments.length === 0)) {
+    if (!message && currentAttachments.length === 0) {
       return NextResponse.json({ error: "Message or attachment is required" }, { status: 400 });
     }
 
-    const hasImages = Array.isArray(attachments) && attachments.some((a: any) => a.type?.startsWith('image/'));
-    const routePlan = await resolveRoutePlan(modelId || 'default', hasImages);
+    const attachmentError = validateInlineAttachments(currentAttachments);
+    if (attachmentError) {
+      return NextResponse.json({ error: attachmentError }, { status: 413 });
+    }
+
+    const requiresNativeMultimodal = currentAttachments.some((attachment) => isGeminiNativeAttachment(attachment));
+    const routePlan = await resolveRoutePlan(modelId || 'default', requiresNativeMultimodal);
 
     if (!routePlan.primary) {
       return NextResponse.json(
-        { error: "No usable AI model is configured. Open Admin > Providers and run Test & Discover." },
+        { error: "No usable AI model is configured for this request. Open Admin > Providers and run Test & Discover." },
         { status: 503 }
       );
     }
 
     const globalInstructions = getInstructions().systemPrompt || 'You are AbhiAI, an intelligent assistant created by Abhishek.';
-    const documentTextAppendix = formatDocumentsForPrompt(attachments);
-    const userEffectiveContent = (message || 'Please review the attached content.') + documentTextAppendix;
 
     const executionChain: RouteCandidate[] = [
       routePlan.primary,
@@ -42,20 +51,29 @@ export async function POST(req: Request) {
           candidate.systemPrompt
         ].filter(Boolean).join('\n\n');
 
+        const documentTextAppendix = formatDocumentsForPrompt(currentAttachments, {
+          skipNativePdf: candidate.providerId === 'google',
+        });
+        const userEffectiveContent = (message || 'Please review the attached content.') + documentTextAppendix;
+
         const chatMessages: any[] = [];
         if (Array.isArray(history)) {
           for (const h of history) {
             chatMessages.push({
               role: h.role === 'assistant' ? 'assistant' : 'user',
               content: h.content || '',
-              attachments: h.attachments,
             });
           }
         }
+
+        const candidateAttachments = candidate.providerId === 'google'
+          ? currentAttachments.filter((attachment) => isGeminiNativeAttachment(attachment))
+          : [];
+
         chatMessages.push({
           role: 'user',
           content: userEffectiveContent,
-          attachments,
+          attachments: candidateAttachments,
         });
 
         const adapter = getProviderAdapter(candidate.providerId, candidate.baseUrl);
