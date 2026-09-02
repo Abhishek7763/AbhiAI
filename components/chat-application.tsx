@@ -1,12 +1,10 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import Link from 'next/link';
-import Image from 'next/image';
 import { 
-  Menu, BookOpen, Edit3, Code, User, Send, Loader2, Sparkles, 
+  Menu, BookOpen, Edit3, Code, User, Send, Sparkles, 
   Paperclip, X, File, Image as ImageIcon, Bot, ChevronRight, Check, Square,
-  Mic, MicOff, Volume2, VolumeX, Globe, Share2, Radio
+  Mic, MicOff, Volume2, VolumeX, Globe, Share2, Radio, ArrowDown
 } from 'lucide-react';
 import Sidebar from './layout/sidebar';
 import ModelSelector from './chat/model-selector';
@@ -30,6 +28,13 @@ const SUGGESTIONS = [
   { icon: Code, text: 'Help me debug a React useEffect issue' },
 ];
 
+const THINKING_TEXTS = [
+  'Thinking...',
+  'Understanding your request...',
+  'Building the answer...',
+  'Structuring the response...',
+];
+
 function MessageActions({ 
   messageId, 
   content, 
@@ -42,16 +47,22 @@ function MessageActions({
   onSpeak: (id: string, text: string) => void;
 }) {
   const [copied, setCopied] = useState(false);
-  const handleCopy = () => {
-    navigator.clipboard.writeText(content);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setCopied(false);
+    }
   };
+
   return (
-    <div className="flex items-center gap-3 mt-2 pt-2 border-t border-zinc-200/50 dark:border-zinc-700/50">
+    <div className="flex items-center gap-3 mt-3 pt-2.5 border-t border-zinc-200/50 dark:border-zinc-700/50">
       <button
         onClick={handleCopy}
-        className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors"
+        className="flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-xs text-zinc-500 hover:text-zinc-800 hover:bg-zinc-100/80 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800/70 transition-colors"
       >
         {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>}
         <span>{copied ? 'Copied' : 'Copy'}</span>
@@ -59,10 +70,10 @@ function MessageActions({
 
       <button
         onClick={() => onSpeak(messageId, content)}
-        className={`flex items-center gap-1.5 text-xs transition-colors ${
+        className={`flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-xs transition-colors ${
           isSpeaking 
-            ? 'text-emerald-600 dark:text-emerald-400 font-medium' 
-            : 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200'
+            ? 'text-emerald-600 dark:text-emerald-400 font-medium bg-emerald-50/70 dark:bg-emerald-950/30' 
+            : 'text-zinc-500 hover:text-zinc-800 hover:bg-zinc-100/80 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800/70'
         }`}
       >
         {isSpeaking ? (
@@ -93,7 +104,11 @@ export default function ChatApplication() {
   const [attachments, setAttachments] = useState<File[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [abortController, setAbortController] = useState<AbortController | null>(null);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const isNearBottomRef = useRef(true);
   
   const {
     sessions,
@@ -109,7 +124,30 @@ export default function ChatApplication() {
   } = useChatHistory();
 
   const [isLoading, setIsLoading] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+    const element = scrollRef.current;
+    if (!element) return;
+    element.scrollTo({ top: element.scrollHeight, behavior });
+    isNearBottomRef.current = true;
+    setShowScrollToBottom(false);
+  };
+
+  const handleChatScroll = () => {
+    const element = scrollRef.current;
+    if (!element) return;
+    const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
+    const isNearBottom = distanceFromBottom < 120;
+    isNearBottomRef.current = isNearBottom;
+    setShowScrollToBottom(!isNearBottom && messages.length > 0);
+  };
+
+  const adjustTextareaHeight = () => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = 'auto';
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 128)}px`;
+  };
 
   // Handle inserting an AI generated image into the chat history
   const handleInsertImageToChat = (image: GeneratedImageItem) => {
@@ -140,17 +178,30 @@ export default function ChatApplication() {
   const { speakingMessageId, speak } = useTextToSpeech();
   const { isListening, isSupported: isSpeechSupported, toggleListening } = useSpeechToText((transcript) => {
     setInput((prev) => (prev ? `${prev} ${transcript}` : transcript));
+    requestAnimationFrame(adjustTextareaHeight);
   });
   
   // Gemini Live Voice Mode Hook
   const { isLive, error: liveError, startLiveMode, stopLiveMode } = useLiveVoice();
 
-  // Auto-scroll on new messages
+  // Keep following new tokens only while the user is already near the bottom.
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
+    if (!isNearBottomRef.current) return;
+    const frame = requestAnimationFrame(() => scrollToBottom('auto'));
+    return () => cancelAnimationFrame(frame);
   }, [messages, isLoading]);
+
+  // Opening an old conversation should land on its latest message.
+  useEffect(() => {
+    isNearBottomRef.current = true;
+    setShowScrollToBottom(false);
+    const frame = requestAnimationFrame(() => scrollToBottom('auto'));
+    return () => cancelAnimationFrame(frame);
+  }, [currentSessionId]);
+
+  useEffect(() => {
+    requestAnimationFrame(adjustTextareaHeight);
+  }, [input]);
 
   const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -188,6 +239,7 @@ export default function ChatApplication() {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value);
+    requestAnimationFrame(adjustTextareaHeight);
   };
 
   const handleStop = () => {
@@ -203,10 +255,11 @@ export default function ChatApplication() {
     if ((!input.trim() && attachments.length === 0) || isLoading) return;
     
     setIsLoading(true);
+    isNearBottomRef.current = true;
+    setShowScrollToBottom(false);
     const controller = new AbortController();
     setAbortController(controller);
     
-    // Process attachments
     const processedAttachments = await Promise.all(
       attachments.map(async (file) => ({
         name: file.name,
@@ -233,13 +286,24 @@ export default function ChatApplication() {
     const sentInput = input;
     setInput('');
     setAttachments([]);
+    requestAnimationFrame(adjustTextareaHeight);
 
     const assistantMsgId = (Date.now() + 1).toString();
     let accumulatedContent = '';
     let responseModelName = '';
     let failoverTriggered = false;
 
-    // Use agent preferred model if selected
+    // Show one inline thinking state immediately; the same message becomes the streamed answer.
+    updateSession(activeSessionId, [
+      ...newMessages,
+      {
+        id: assistantMsgId,
+        role: 'assistant',
+        content: '',
+        isStreaming: true,
+      }
+    ]);
+
     const modelToUse = selectedAgent?.preferredModelOrAlias || selectedModel || 'default';
 
     try {
@@ -272,17 +336,6 @@ export default function ChatApplication() {
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
-
-      // Initialize placeholder message for smooth real-time generation
-      updateSession(activeSessionId, [
-        ...newMessages,
-        {
-          id: assistantMsgId,
-          role: 'assistant',
-          content: '',
-          isStreaming: true,
-        }
-      ]);
 
       while (true) {
         const { done, value } = await reader.read();
@@ -319,15 +372,14 @@ export default function ChatApplication() {
             } else if (parsed.type === 'error') {
               throw new Error(parsed.error || 'Error streaming response');
             }
-          } catch (e: any) {
-            if (e.message && !e.message.includes('JSON')) {
-              throw e;
+          } catch (error: any) {
+            if (error.message && !error.message.includes('JSON')) {
+              throw error;
             }
           }
         }
       }
 
-      // Finalize completed streaming message
       updateSession(activeSessionId, [
         ...newMessages,
         {
@@ -339,15 +391,14 @@ export default function ChatApplication() {
           isStreaming: false,
         }
       ]);
-    } catch (err: any) {
-      if (err.name === 'AbortError') {
-        // User aborted, keep accumulated content
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
         updateSession(activeSessionId, [
           ...newMessages,
           {
             id: assistantMsgId,
             role: 'assistant',
-            content: accumulatedContent + '\n\n*(Generation stopped)*',
+            content: accumulatedContent ? `${accumulatedContent}\n\n*(Generation stopped)*` : '*(Generation stopped)*',
             model: responseModelName,
             failoverUsed: failoverTriggered,
             isStreaming: false,
@@ -356,11 +407,11 @@ export default function ChatApplication() {
         return;
       }
       
-      console.error(err);
-      const errorMessage: any = { 
+      console.error(error);
+      const errorMessage: Message = { 
         id: assistantMsgId, 
         role: 'assistant', 
-        content: err.message || "Error: AbhiAI is temporarily unable to complete this request." 
+        content: error.message || 'AbhiAI is temporarily unable to complete this request.' 
       };
       updateSession(activeSessionId, [...newMessages, errorMessage]);
     } finally {
@@ -396,8 +447,7 @@ export default function ChatApplication() {
         }}
       />
       
-      <div className="flex-1 flex flex-col md:ml-72 min-w-0 transition-all duration-300">
-        {/* Header with AbhiAI Branding */}
+      <div className="relative flex-1 flex flex-col md:ml-72 min-w-0 transition-all duration-300">
         <header className="h-16 flex items-center justify-between px-4 border-b border-zinc-200/60 dark:border-zinc-800/60 bg-white/75 dark:bg-zinc-950/75 backdrop-blur-md sticky top-0 z-10">
           <div className="flex items-center gap-3">
             <button 
@@ -408,14 +458,12 @@ export default function ChatApplication() {
               <Menu className="w-5 h-5" />
             </button>
             
-            {/* Mobile Header: AbhiLogo */}
             <div className="md:hidden flex items-center">
               <AbhiLogo variant="icon" size="sm" href="/" />
             </div>
 
             <ModelSelector onModelSelect={setSelectedModel} />
 
-            {/* Agent Drawer Trigger Button */}
             <button
               onClick={() => setAgentDrawerOpen(true)}
               className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl border border-zinc-200/80 dark:border-zinc-800/80 bg-white/60 dark:bg-zinc-900/60 backdrop-blur-xs text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-white dark:hover:bg-zinc-800 transition-all shadow-xs"
@@ -425,7 +473,6 @@ export default function ChatApplication() {
               <ChevronRight className="w-3 h-3 text-zinc-400" />
             </button>
 
-            {/* AI Image Studio Header Trigger */}
             <button
               onClick={() => {
                 setImageModalPrompt(input);
@@ -440,7 +487,6 @@ export default function ChatApplication() {
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Mobile Image Studio Trigger */}
             <button
               onClick={() => {
                 setImageModalPrompt(input);
@@ -471,7 +517,6 @@ export default function ChatApplication() {
               <Bot className="w-4 h-4 text-emerald-500" />
             </button>
 
-            {/* Universal Theme Toggle in Header */}
             <ThemeToggle variant="compact" />
 
             <div className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-full bg-white/60 dark:bg-zinc-900/60 border border-zinc-200/60 dark:border-zinc-800 text-xs text-zinc-600 dark:text-zinc-400 backdrop-blur-xs">
@@ -481,28 +526,25 @@ export default function ChatApplication() {
           </div>
         </header>
 
-        {/* Active Agent Banner (if an agent is currently selected) */}
         {selectedAgent && (
           <div className="px-4 py-2 bg-emerald-50/80 dark:bg-emerald-950/40 backdrop-blur-xs border-b border-emerald-200/60 dark:border-emerald-900/40 flex items-center justify-between text-xs">
-            <div className="flex items-center gap-2 text-emerald-900 dark:text-emerald-300">
-              <Bot className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-              <span>Active Agent: <strong>{selectedAgent.name}</strong></span>
-              <span className="text-zinc-400 hidden sm:inline">— {selectedAgent.description}</span>
+            <div className="flex items-center gap-2 text-emerald-900 dark:text-emerald-300 min-w-0">
+              <Bot className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <span className="truncate">Active Agent: <strong>{selectedAgent.name}</strong></span>
+              <span className="text-zinc-400 hidden sm:inline truncate">— {selectedAgent.description}</span>
             </div>
             <button
               onClick={() => setSelectedAgent(null)}
-              className="text-emerald-700 dark:text-emerald-400 hover:underline font-semibold text-[11px]"
+              className="ml-3 shrink-0 text-emerald-700 dark:text-emerald-400 hover:underline font-semibold text-[11px]"
             >
-              Reset to General
+              Reset
             </button>
           </div>
         )}
 
-        {/* Chat Canvas */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto scroll-smooth">
+        <div ref={scrollRef} onScroll={handleChatScroll} className="flex-1 overflow-y-auto scroll-smooth overscroll-contain">
           {messages.length === 0 ? (
             <div className="min-h-full flex flex-col items-center justify-start sm:justify-center px-4 py-4 sm:py-8 max-w-2xl mx-auto w-full">
-              {/* Full ABHIAI Logo */}
               <div className="mt-2 sm:mt-0 mb-3 sm:mb-6 flex flex-col items-center select-none scale-90 sm:scale-100 origin-center">
                 <AbhiLogo variant="full" size="hero" href="/" />
               </div>
@@ -512,11 +554,10 @@ export default function ChatApplication() {
                   {selectedAgent ? `How can ${selectedAgent.name} assist you?` : 'How can I help you today?'}
                 </h2>
                 <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 max-w-md">
-                  {selectedAgent ? selectedAgent.description : 'Experience intelligent reasoning, web search grounding, speech, and live creative tools.'}
+                  {selectedAgent ? selectedAgent.description : 'Ask, reason, code, create, or explore with AbhiAI.'}
                 </p>
               </div>
 
-              {/* Quick Prompt Cards - Compact & Mobile Friendly */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3 w-full px-1 sm:px-2">
                 {(selectedAgent?.sampleStarters && selectedAgent.sampleStarters.length > 0
                   ? selectedAgent.sampleStarters.map((text: string) => ({ icon: Sparkles, text }))
@@ -539,45 +580,52 @@ export default function ChatApplication() {
             </div>
           ) : (
             <div className="pb-8 max-w-3xl mx-auto w-full p-4 space-y-6 mt-4">
-              {messages.map(m => (
-                <div key={m.id} className={`flex gap-3.5 ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  {m.role !== 'user' && (
+              {messages.map((message) => (
+                <div key={message.id} className={`flex gap-3.5 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  {message.role !== 'user' && (
                     <div className="mt-1 shrink-0">
                       <AbhiLogo variant="icon" size="sm" />
                     </div>
                   )}
                   
                   <div className={`max-w-[85%] px-5 py-3.5 shadow-xs ${
-                    m.role === 'user' 
+                    message.role === 'user' 
                       ? 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-3xl rounded-tr-sm' 
                       : 'bg-white/85 dark:bg-zinc-900/80 border border-zinc-200/80 dark:border-zinc-800/80 backdrop-blur-xs text-zinc-900 dark:text-zinc-100 rounded-3xl rounded-tl-sm'
                   }`}>
-                    
-                    {m.attachments && m.attachments.length > 0 && (
+                    {message.attachments && message.attachments.length > 0 && (
                       <div className="flex flex-wrap gap-2 mb-2 mt-1">
-                        {m.attachments.map((att: any, idx: number) => (
-                          att.type.startsWith('image/') ? (
+                        {message.attachments.map((attachment: any, idx: number) => (
+                          attachment.type.startsWith('image/') ? (
                             /* eslint-disable-next-line @next/next/no-img-element */
-                            <img key={idx} src={`data:${att.type};base64,${att.data}`} alt={att.name} className="h-32 w-auto object-cover rounded-xl border border-zinc-200 dark:border-zinc-700" />
+                            <img key={idx} src={`data:${attachment.type};base64,${attachment.data}`} alt={attachment.name} className="h-32 w-auto max-w-full object-cover rounded-xl border border-zinc-200 dark:border-zinc-700" />
                           ) : (
-                            <div key={idx} className="flex items-center gap-2 bg-white/50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-700 rounded-lg px-3 py-2 text-xs">
-                              <File className="w-4 h-4 text-zinc-500" />
-                              <span className="font-medium text-zinc-700 dark:text-zinc-300">{att.name}</span>
+                            <div key={idx} className="flex items-center gap-2 bg-white/50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-700 rounded-lg px-3 py-2 text-xs max-w-full">
+                              <File className="w-4 h-4 text-zinc-500 shrink-0" />
+                              <span className="font-medium text-zinc-700 dark:text-zinc-300 truncate">{attachment.name}</span>
                             </div>
                           )
                         ))}
                       </div>
                     )}
-                    {m.role === 'user' ? (
-                      <p className="whitespace-pre-wrap text-[15px] leading-relaxed">{m.content}</p>
+
+                    {message.role === 'user' ? (
+                      <p className="whitespace-pre-wrap text-[15px] leading-relaxed">{message.content}</p>
+                    ) : message.isStreaming && !message.content ? (
+                      <div className="min-h-8 flex items-center py-0.5">
+                        <AITextLoading texts={THINKING_TEXTS} interval={1100} />
+                      </div>
                     ) : (
                       <>
-                        <MarkdownRenderer content={m.content} />
-                        {!m.isStreaming && (
+                        <MarkdownRenderer content={message.content} />
+                        {message.isStreaming && (
+                          <span className="mt-1 inline-block h-4 w-1.5 rounded-full bg-blue-500/80 dark:bg-blue-400/80 align-middle animate-pulse" aria-label="Generating" />
+                        )}
+                        {!message.isStreaming && message.content && (
                           <MessageActions 
-                            messageId={m.id} 
-                            content={m.content} 
-                            isSpeaking={speakingMessageId === m.id}
+                            messageId={message.id} 
+                            content={message.content} 
+                            isSpeaking={speakingMessageId === message.id}
                             onSpeak={speak}
                           />
                         )}
@@ -585,55 +633,36 @@ export default function ChatApplication() {
                     )}
                   </div>
                   
-                  {m.role === 'user' && (
+                  {message.role === 'user' && (
                     <div className="w-8 h-8 rounded-full bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center shrink-0 shadow-xs mt-1">
                       <User className="w-4 h-4 text-zinc-600 dark:text-zinc-400" />
                     </div>
                   )}
                 </div>
               ))}
-
-              {isLoading && (
-                <div className="flex gap-3.5 justify-start items-start">
-                  <div className="w-8 h-8 rounded-full bg-[#0c0d12] border border-zinc-800 flex items-center justify-center shrink-0 shadow-xs mt-1 p-0.5 overflow-hidden">
-                    <Image
-                      src="/branding/abhiai-icon.png"
-                      alt="AbhiAI"
-                      width={64}
-                      height={64}
-                      quality={100}
-                      referrerPolicy="no-referrer"
-                      className="w-full h-full object-contain animate-pulse"
-                    />
-                  </div>
-                  <div className="px-5 py-3 shadow-xs bg-white/90 dark:bg-zinc-900/90 border border-purple-200/60 dark:border-purple-900/40 backdrop-blur-md rounded-3xl rounded-tl-sm">
-                    <AITextLoading 
-                      texts={[
-                        "Thinking...",
-                        "Analyzing prompt...",
-                        "Searching intelligence...",
-                        "Synthesizing thoughts...",
-                        "Structuring response...",
-                        "Almost ready...",
-                      ]}
-                      interval={1300}
-                    />
-                  </div>
-                </div>
-              )}
             </div>
           )}
         </div>
 
-        {/* Input Bar */}
-        <div className="p-4 bg-gradient-to-t from-white dark:from-zinc-950 via-white dark:via-zinc-950 to-transparent">
+        {showScrollToBottom && messages.length > 0 && (
+          <button
+            type="button"
+            onClick={() => scrollToBottom('smooth')}
+            className="absolute z-20 bottom-[7.25rem] sm:bottom-[7.75rem] left-1/2 -translate-x-1/2 flex items-center justify-center w-9 h-9 rounded-full border border-zinc-200/90 dark:border-zinc-700/90 bg-white/95 dark:bg-zinc-900/95 text-zinc-700 dark:text-zinc-200 shadow-lg backdrop-blur-md hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-all active:scale-95"
+            title="Jump to latest message"
+            aria-label="Jump to latest message"
+          >
+            <ArrowDown className="w-4 h-4" />
+          </button>
+        )}
+
+        <div className="chat-composer-shell p-4 bg-gradient-to-t from-white dark:from-zinc-950 via-white dark:via-zinc-950 to-transparent">
           <div className="max-w-3xl mx-auto space-y-2">
-            {/* Quick Action Badges */}
-            <div className="flex items-center gap-2 px-1">
+            <div className="flex items-center gap-2 px-1 overflow-x-auto no-scrollbar">
               <button
                 type="button"
                 onClick={() => setWebSearchEnabled(!webSearchEnabled)}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
+                className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
                   webSearchEnabled
                     ? 'bg-blue-600 text-white shadow-xs'
                     : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800 border border-zinc-200/60 dark:border-zinc-800'
@@ -644,20 +673,20 @@ export default function ChatApplication() {
               </button>
 
               {isListening && (
-                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800/50 text-xs animate-pulse">
+                <div className="shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800/50 text-xs animate-pulse">
                   <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
-                  <span>Listening... Speak now</span>
+                  <span>Listening...</span>
                 </div>
               )}
             </div>
 
-            <form onSubmit={handleSubmit} className="relative flex flex-col bg-white/85 dark:bg-zinc-900/85 backdrop-blur-md border border-zinc-200/90 dark:border-zinc-800/90 rounded-3xl shadow-sm p-1.5 focus-within:ring-2 focus-within:ring-blue-500/50 transition-all">
+            <form onSubmit={handleSubmit} className="relative flex flex-col bg-white/88 dark:bg-zinc-900/88 backdrop-blur-xl border border-zinc-200/90 dark:border-zinc-800/90 rounded-[1.65rem] shadow-sm p-1.5 focus-within:ring-2 focus-within:ring-blue-500/35 focus-within:border-blue-400/40 dark:focus-within:border-blue-500/40 transition-all">
               {attachments.length > 0 && (
                 <div className="flex flex-wrap gap-2 p-2 border-b border-zinc-200 dark:border-zinc-800">
                   {attachments.map((file, idx) => (
-                    <div key={idx} className="flex items-center gap-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-2 py-1 text-xs">
-                      {file.type.startsWith('image/') ? <ImageIcon className="w-3.5 h-3.5 text-blue-500" /> : <File className="w-3.5 h-3.5 text-orange-500" />}
-                      <span className="max-w-[100px] truncate text-zinc-700 dark:text-zinc-300 font-medium">{file.name}</span>
+                    <div key={idx} className="flex items-center gap-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-2 py-1 text-xs max-w-full">
+                      {file.type.startsWith('image/') ? <ImageIcon className="w-3.5 h-3.5 text-blue-500 shrink-0" /> : <File className="w-3.5 h-3.5 text-orange-500 shrink-0" />}
+                      <span className="max-w-[140px] truncate text-zinc-700 dark:text-zinc-300 font-medium">{file.name}</span>
                       <button type="button" onClick={() => removeAttachment(idx)} className="text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100">
                         <X className="w-3.5 h-3.5" />
                       </button>
@@ -690,16 +719,15 @@ export default function ChatApplication() {
                     onClick={toggleListening}
                     className={`mb-1 w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-full transition-colors shrink-0 ${
                       isListening 
-                        ? 'bg-red-500 text-white animate-bounce' 
+                        ? 'bg-red-500 text-white animate-pulse' 
                         : 'text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-200/50 dark:hover:bg-zinc-800'
                     }`}
-                    title={isListening ? "Stop Listening" : "Voice Dictation"}
+                    title={isListening ? 'Stop Listening' : 'Voice Dictation'}
                   >
                     {isListening ? <MicOff className="w-4 h-4 sm:w-4.5 sm:h-4.5" /> : <Mic className="w-4 h-4 sm:w-4.5 sm:h-4.5" />}
                   </button>
                 )}
 
-                {/* Gemini Live Voice Mode Trigger */}
                 <button
                   type="button"
                   onClick={startLiveMode}
@@ -709,7 +737,6 @@ export default function ChatApplication() {
                   <Radio className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
                 </button>
 
-                {/* Quick AI Image Studio Trigger from input bar */}
                 <button
                   type="button"
                   onClick={() => {
@@ -723,12 +750,13 @@ export default function ChatApplication() {
                 </button>
 
                 <textarea
+                  ref={textareaRef}
                   value={input}
                   onChange={handleInputChange}
                   onKeyDown={onKeyDown}
-                  placeholder={selectedAgent ? `Ask ${selectedAgent.name}...` : "Ask AbhiAI anything..."}
+                  placeholder={selectedAgent ? `Ask ${selectedAgent.name}...` : 'Ask AbhiAI anything...'}
                   disabled={isLoading}
-                  className="flex-1 max-h-32 min-h-[40px] px-2 py-2.5 bg-transparent resize-none focus:outline-none text-sm sm:text-[15px] text-zinc-900 dark:text-zinc-100 leading-relaxed disabled:opacity-50"
+                  className="flex-1 max-h-32 min-h-[40px] px-2 py-2.5 bg-transparent resize-none overflow-y-auto focus:outline-none text-sm sm:text-[15px] text-zinc-900 dark:text-zinc-100 leading-relaxed disabled:opacity-60 placeholder:text-zinc-400 dark:placeholder:text-zinc-500"
                   rows={1}
                 />
 
@@ -745,21 +773,21 @@ export default function ChatApplication() {
                   <button
                     type="submit"
                     disabled={!input.trim() && attachments.length === 0}
-                    className="mb-1 mr-0.5 w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center bg-zinc-900 dark:bg-zinc-100 hover:bg-zinc-800 dark:hover:bg-white text-white dark:text-zinc-900 rounded-full transition-transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed shadow-xs shrink-0"
+                    className="mb-1 mr-0.5 w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center bg-zinc-900 dark:bg-zinc-100 hover:bg-zinc-800 dark:hover:bg-white text-white dark:text-zinc-900 rounded-full transition-transform active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed shadow-xs shrink-0"
+                    title="Send message"
                   >
                     <Send className="w-4 h-4 ml-0.5" />
                   </button>
                 )}
               </div>
             </form>
-            <p className="text-center text-[11px] text-zinc-400 dark:text-zinc-500 mt-2 font-medium">
-              AbhiAI can make mistakes. Consider verifying important information.
+            <p className="text-center text-[10px] sm:text-[11px] text-zinc-400 dark:text-zinc-500 mt-1.5 font-medium">
+              AbhiAI can make mistakes. Verify important information.
             </p>
           </div>
         </div>
       </div>
 
-      {/* AI Image Generator Studio Modal */}
       <ImageGeneratorModal
         isOpen={imageModalOpen}
         onClose={() => setImageModalOpen(false)}
@@ -767,7 +795,6 @@ export default function ChatApplication() {
         onInsertToChat={handleInsertImageToChat}
       />
 
-      {/* Agent Drawer Modal */}
       <AgentDrawer
         isOpen={agentDrawerOpen}
         onClose={() => setAgentDrawerOpen(false)}
@@ -776,7 +803,6 @@ export default function ChatApplication() {
         onStarterClick={handleStarterSubmit}
       />
 
-      {/* Chat Export & Share Modal */}
       <ChatExportModal
         isOpen={exportModalOpen}
         onClose={() => setExportModalOpen(false)}
@@ -784,7 +810,6 @@ export default function ChatApplication() {
         messages={messages}
       />
 
-      {/* Live Voice Overlay Modal */}
       <LiveVoiceOverlay
         isOpen={isLive}
         onClose={stopLiveMode}
