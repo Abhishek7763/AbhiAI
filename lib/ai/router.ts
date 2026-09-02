@@ -1,5 +1,6 @@
 import type { AIConnection } from '@/lib/connections';
 import { listRuntimeConnections } from '@/lib/data/ai-config';
+import { getAbhiAIModeInstruction } from '@/lib/ai/modes';
 
 export interface RouteCandidate {
   connectionId: string;
@@ -18,6 +19,11 @@ export interface SmartRoutePlan {
 }
 
 function toCandidate(connection: AIConnection, isPrimary = false): RouteCandidate {
+  const modeInstruction = getAbhiAIModeInstruction({
+    name: connection.name,
+    modelId: connection.modelId,
+  });
+
   return {
     connectionId: connection.id,
     name: connection.name,
@@ -25,7 +31,7 @@ function toCandidate(connection: AIConnection, isPrimary = false): RouteCandidat
     baseUrl: connection.baseUrl,
     apiKey: connection.apiKey,
     modelId: connection.modelId,
-    systemPrompt: connection.systemPrompt || '',
+    systemPrompt: [modeInstruction, connection.systemPrompt || ''].filter(Boolean).join('\n\n'),
     isPrimary,
   };
 }
