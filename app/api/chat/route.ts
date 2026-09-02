@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getInstructions } from "@/lib/instructions";
 import { resolveRoutePlan, RouteCandidate } from "@/lib/ai/router";
 import { getProviderAdapter } from "@/lib/ai/providers/registry";
+import { logUsageEvent } from "@/lib/usage-logger";
 import {
   formatDocumentsForPrompt,
   isGeminiNativeAttachment,
@@ -10,9 +11,13 @@ import {
 } from "@/lib/files/document-extractor";
 
 export async function POST(req: Request) {
+  const startTime = Date.now();
+  let requestedModel = 'default';
+
   try {
     const { message, history, modelId, attachments } = await req.json();
     const currentAttachments: AttachmentPayload[] = Array.isArray(attachments) ? attachments : [];
+    requestedModel = modelId || 'default';
 
     if (!message && currentAttachments.length === 0) {
       return NextResponse.json({ error: "Message or attachment is required" }, { status: 400 });
@@ -24,7 +29,7 @@ export async function POST(req: Request) {
     }
 
     const requiresNativeMultimodal = currentAttachments.some((attachment) => isGeminiNativeAttachment(attachment));
-    const routePlan = await resolveRoutePlan(modelId || 'default', requiresNativeMultimodal);
+    const routePlan = await resolveRoutePlan(requestedModel, requiresNativeMultimodal);
 
     if (!routePlan.primary) {
       return NextResponse.json(
@@ -42,7 +47,7 @@ export async function POST(req: Request) {
 
     let lastError: string | null = null;
     let successfulReply: string | null = null;
-    let executedModelName: string = routePlan.primary.name;
+    let executedCandidate: RouteCandidate | null = null;
 
     for (const candidate of executionChain) {
       try {
@@ -94,7 +99,7 @@ export async function POST(req: Request) {
 
         if (reply) {
           successfulReply = reply;
-          executedModelName = candidate.name;
+          executedCandidate = candidate;
           break;
         }
       } catch (err: any) {
@@ -103,13 +108,40 @@ export async function POST(req: Request) {
       }
     }
 
-    if (successfulReply) {
+    if (successfulReply && executedCandidate) {
+      const failoverUsed = executedCandidate.connectionId !== routePlan.primary.connectionId;
+      logUsageEvent({
+        modelOrAlias: requestedModel,
+        executedModelName: executedCandidate.name,
+        executedModelId: executedCandidate.modelId,
+        connectionId: executedCandidate.connectionId,
+        provider: executedCandidate.providerId,
+        promptLength: (message || '').length,
+        responseLength: successfulReply.length,
+        durationMs: Date.now() - startTime,
+        failoverUsed,
+        isPublic: true,
+        status: 'success',
+      });
+
       return NextResponse.json({
         reply: successfulReply,
-        model: executedModelName,
-        failoverUsed: executedModelName !== routePlan.primary.name
+        model: executedCandidate.name,
+        failoverUsed
       });
     }
+
+    logUsageEvent({
+      modelOrAlias: requestedModel,
+      provider: 'all-failed',
+      promptLength: (message || '').length,
+      responseLength: 0,
+      durationMs: Date.now() - startTime,
+      failoverUsed: true,
+      isPublic: true,
+      status: 'error',
+      errorCode: 'ALL_CANDIDATES_FAILED',
+    });
 
     return NextResponse.json({
       error: "AbhiAI is temporarily unable to complete this request. Please try again shortly.",
