@@ -1,7 +1,108 @@
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Public chat should use the available viewport instead of a narrow document column. */
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+/* Public chat uses the available viewport instead of a narrow document column. */
 .h-screen > .md\:ml-72 .max-w-3xl {
   max-width: 100%;
+}
+
+/* Claude-like mobile conversation density: tight gutters, flat assistant replies, wide composer. */
+@media (max-width: 767px) {
+  .h-screen > .md\:ml-72 > div[class~="flex-1"][class~="overflow-y-auto"] > div[class~="pb-8"][class~="max-w-3xl"] {
+    margin-top: 0.25rem !important;
+    padding: 0.5rem 0.75rem 1.5rem !important;
+  }
+
+  .h-screen > .md\:ml-72 > div[class~="flex-1"][class~="overflow-y-auto"] > div[class~="pb-8"][class~="max-w-3xl"] > * + * {
+    margin-top: 1rem !important;
+  }
+
+  .h-screen > .md\:ml-72 .justify-start,
+  .h-screen > .md\:ml-72 .justify-end {
+    gap: 0.5rem !important;
+  }
+
+  /* Repeated avatars consume too much horizontal space on phones. */
+  .h-screen > .md\:ml-72 .justify-start > .mt-1.shrink-0,
+  .h-screen > .md\:ml-72 .justify-end > .w-8.h-8.shrink-0 {
+    display: none !important;
+  }
+
+  /* Assistant answers read as a document, not as a nested card. */
+  .h-screen > .md\:ml-72 .justify-start > div[class*="max-w-[85%]"] {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    padding: 0.25rem 0 0.5rem !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+  }
+
+  /* User messages stay compact but no longer lose width to the avatar. */
+  .h-screen > .md\:ml-72 .justify-end > div[class*="max-w-[85%]"] {
+    max-width: 92% !important;
+    padding: 0.7rem 1rem !important;
+    border-radius: 1.35rem !important;
+  }
+
+  /* Thinking state follows the same flat assistant layout. */
+  .h-screen > .md\:ml-72 .justify-start.items-start > div:last-child {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    padding: 0.45rem 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+  }
+
+  /* Keep response typography readable without oversized mobile text. */
+  .h-screen > .md\:ml-72 .prose {
+    font-size: 0.95rem !important;
+    line-height: 1.65 !important;
+  }
+
+  .h-screen > .md\:ml-72 .prose p,
+  .h-screen > .md\:ml-72 .prose li {
+    line-height: 1.65 !important;
+  }
+
+  /* Composer sits close to the phone edges, like modern AI chat apps. */
+  .h-screen > .md\:ml-72 > div[class~="p-4"][class~="bg-gradient-to-t"] {
+    padding: 0.5rem 0.75rem 0.4rem !important;
+  }
+
+  .h-screen > .md\:ml-72 > div[class~="p-4"][class~="bg-gradient-to-t"] > .max-w-3xl {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  /* Code and tables should consume the full answer width. */
+  .h-screen > .md\:ml-72 .prose > div,
+  .h-screen > .md\:ml-72 .prose pre,
+  .h-screen > .md\:ml-72 .prose table {
+    max-width: 100% !important;
+  }
+}
+
+@media (min-width: 768px) {
+  .h-screen > .md\:ml-72 > div[class~="flex-1"][class~="overflow-y-auto"] > div[class~="pb-8"][class~="max-w-3xl"],
+  .h-screen > .md\:ml-72 > div[class~="p-4"][class~="bg-gradient-to-t"] > .max-w-3xl {
+    width: min(100%, 72rem) !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+  }
 }
