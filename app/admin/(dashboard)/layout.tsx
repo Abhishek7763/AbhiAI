@@ -1,4 +1,4 @@
-import AdminSidebar from '@/components/admin/admin-sidebar';
+import AdminShell from '@/components/admin/admin-shell';
 import { requireAdminPage } from '@/lib/security/admin-auth';
 
 export default async function AdminLayout({
@@ -8,14 +8,5 @@ export default async function AdminLayout({
 }) {
   await requireAdminPage();
 
-  return (
-    <div className="flex h-screen bg-zinc-50/70 dark:bg-zinc-950/70 backdrop-blur-xs overflow-hidden">
-      <AdminSidebar />
-      <main className="flex-1 overflow-y-auto">
-        <div className="p-8 max-w-6xl mx-auto">
-          {children}
-        </div>
-      </main>
-    </div>
-  );
+  return <AdminShell>{children}</AdminShell>;
 }
