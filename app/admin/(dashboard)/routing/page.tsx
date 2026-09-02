@@ -14,13 +14,33 @@ type ModelOption = {
   billingClassification: string;
 };
 
+type HealthRow = {
+  id: string;
+  status: 'HEALTHY' | 'DEGRADED' | 'RATE_LIMITED' | 'AUTH_ERROR' | 'OFFLINE' | 'CONFIG_ERROR';
+  latencyMs: number;
+};
+
 type Config = {
   preferredModelRecordId: string | null;
   poolModelRecordIds: string[];
 };
 
+function healthMeta(status: HealthRow['status'] | 'UNKNOWN') {
+  if (status === 'HEALTHY') {
+    return { label: 'Healthy', dot: 'bg-emerald-500', text: 'text-emerald-600 dark:text-emerald-400' };
+  }
+  if (status === 'DEGRADED' || status === 'RATE_LIMITED') {
+    return { label: status === 'RATE_LIMITED' ? 'Rate limited' : 'Limited', dot: 'bg-amber-500', text: 'text-amber-600 dark:text-amber-400' };
+  }
+  if (status === 'AUTH_ERROR' || status === 'OFFLINE' || status === 'CONFIG_ERROR') {
+    return { label: 'Unavailable', dot: 'bg-red-500', text: 'text-red-600 dark:text-red-400' };
+  }
+  return { label: 'Not checked', dot: 'bg-zinc-300 dark:bg-zinc-700', text: 'text-zinc-500' };
+}
+
 export default function RoutingPage() {
   const [models, setModels] = useState<ModelOption[]>([]);
+  const [healthData, setHealthData] = useState<HealthRow[]>([]);
   const [config, setConfig] = useState<Config>({ preferredModelRecordId: null, poolModelRecordIds: [] });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -29,16 +49,21 @@ export default function RoutingPage() {
   useEffect(() => {
     let mounted = true;
 
-    fetch('/api/admin/routing')
-      .then(async (res) => {
+    Promise.all([
+      fetch('/api/admin/routing').then(async (res) => {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Could not load routing settings.');
         return data;
-      })
-      .then((data) => {
+      }),
+      fetch('/api/admin/health', { cache: 'no-store' })
+        .then((res) => res.json())
+        .catch(() => ({ health: [] })),
+    ])
+      .then(([routingData, healthResponse]) => {
         if (!mounted) return;
-        setModels(data.models || []);
-        setConfig(data.config || { preferredModelRecordId: null, poolModelRecordIds: [] });
+        setModels(routingData.models || []);
+        setConfig(routingData.config || { preferredModelRecordId: null, poolModelRecordIds: [] });
+        setHealthData(Array.isArray(healthResponse.health) ? healthResponse.health : []);
       })
       .catch((error) => {
         if (mounted) setMessage(error instanceof Error ? error.message : 'Could not load routing settings.');
@@ -53,6 +78,11 @@ export default function RoutingPage() {
   }, []);
 
   const eligibleModels = useMemo(() => models.filter((model) => model.runtimeEligible), [models]);
+  const healthById = useMemo(() => new Map(healthData.map((row) => [row.id, row])), [healthData]);
+  const healthyPoolCount = useMemo(
+    () => config.poolModelRecordIds.filter((id) => healthById.get(id)?.status === 'HEALTHY').length,
+    [config.poolModelRecordIds, healthById],
+  );
 
   const togglePool = (recordId: string) => {
     setConfig((current) => {
@@ -113,7 +143,7 @@ export default function RoutingPage() {
         </button>
       </div>
 
-      <div className="grid sm:grid-cols-3 gap-3">
+      <div className="grid sm:grid-cols-4 gap-3">
         <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
           <div className="text-xs font-semibold uppercase tracking-wider text-zinc-400">Routing mode</div>
           <div className="mt-2 flex items-center gap-2 font-semibold"><Sparkles className="w-4 h-4 text-blue-500" /> Smart Auto</div>
@@ -123,8 +153,12 @@ export default function RoutingPage() {
           <div className="mt-2 text-2xl font-bold">{config.poolModelRecordIds.length}</div>
         </div>
         <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
+          <div className="text-xs font-semibold uppercase tracking-wider text-zinc-400">Healthy now</div>
+          <div className="mt-2 text-2xl font-bold text-emerald-600 dark:text-emerald-400">{healthyPoolCount}</div>
+        </div>
+        <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
           <div className="text-xs font-semibold uppercase tracking-wider text-zinc-400">Safety</div>
-          <div className="mt-2 flex items-center gap-2 text-sm font-semibold text-emerald-600 dark:text-emerald-400"><ShieldCheck className="w-4 h-4" /> Free Guard enforced</div>
+          <div className="mt-2 flex items-center gap-2 text-sm font-semibold text-emerald-600 dark:text-emerald-400"><ShieldCheck className="w-4 h-4" /> Free Guard</div>
         </div>
       </div>
 
@@ -140,6 +174,8 @@ export default function RoutingPage() {
           ) : eligibleModels.map((model) => {
             const inPool = config.poolModelRecordIds.includes(model.recordId);
             const preferred = config.preferredModelRecordId === model.recordId;
+            const health = healthById.get(model.recordId);
+            const live = healthMeta(health?.status || 'UNKNOWN');
             return (
               <div key={model.recordId} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <button type="button" onClick={() => togglePool(model.recordId)} className="flex items-start gap-3 text-left min-w-0">
@@ -152,8 +188,11 @@ export default function RoutingPage() {
                   </span>
                 </button>
 
-                <div className="flex items-center gap-2 pl-8 sm:pl-0">
-                  <span className="inline-flex items-center gap-1.5 text-[11px] text-emerald-600 dark:text-emerald-400"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Eligible</span>
+                <div className="flex items-center gap-2 pl-8 sm:pl-0 flex-wrap justify-end">
+                  <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold ${live.text}`}>
+                    <span className={`w-2 h-2 rounded-full ${live.dot}`} /> {live.label}
+                    {health && health.latencyMs > 0 ? ` · ${health.latencyMs}ms` : ''}
+                  </span>
                   <button
                     type="button"
                     disabled={!inPool}
