@@ -1,7 +1,12 @@
 import { Boxes } from 'lucide-react';
 import GoogleProviderPanel from '@/components/admin/google-provider-panel';
+import { listProviders } from '@/lib/data/ai-config';
 
-export default function ProvidersPage() {
+export default async function ProvidersPage() {
+  const providers = await listProviders();
+  const google = providers.find((provider) => provider.slug === 'google');
+  const activeKeyCount = (google?.ai_api_keys ?? []).filter((key) => key.status === 'active').length;
+
   return (
     <div className="space-y-6">
       <div>
@@ -16,7 +21,7 @@ export default function ProvidersPage() {
         </p>
       </div>
 
-      <GoogleProviderPanel />
+      <GoogleProviderPanel activeKeyCount={activeKeyCount} />
     </div>
   );
 }
