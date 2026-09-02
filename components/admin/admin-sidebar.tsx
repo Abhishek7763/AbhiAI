@@ -14,12 +14,11 @@ import {
   BarChart,
   FileText,
   Settings,
-  LogOut,
   Route,
 } from 'lucide-react';
-import { logout } from '@/app/admin/actions';
 import { AbhiLogo } from '@/components/brand/logo';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
+import AdminLogoutButton from '@/components/admin/admin-logout-button';
 
 const NAV_ITEMS = [
   { name: 'Overview', href: '/admin', icon: LayoutDashboard },
@@ -86,15 +85,7 @@ export default function AdminSidebar({ onNavigate, className = '' }: AdminSideba
 
       <div className="p-3 border-t border-zinc-200 dark:border-zinc-800 space-y-3">
         <ThemeToggle />
-        <form action={logout}>
-          <button
-            type="submit"
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 dark:hover:text-red-400 transition-colors"
-          >
-            <LogOut className="w-4 h-4" />
-            Logout
-          </button>
-        </form>
+        <AdminLogoutButton />
       </div>
     </aside>
   );
