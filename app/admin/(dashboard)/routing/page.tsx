@@ -26,23 +26,30 @@ export default function RoutingPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  const load = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch('/api/admin/routing');
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Could not load routing settings.');
-      setModels(data.models || []);
-      setConfig(data.config || { preferredModelRecordId: null, poolModelRecordIds: [] });
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Could not load routing settings.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    void load();
+    let mounted = true;
+
+    fetch('/api/admin/routing')
+      .then(async (res) => {
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Could not load routing settings.');
+        return data;
+      })
+      .then((data) => {
+        if (!mounted) return;
+        setModels(data.models || []);
+        setConfig(data.config || { preferredModelRecordId: null, poolModelRecordIds: [] });
+      })
+      .catch((error) => {
+        if (mounted) setMessage(error instanceof Error ? error.message : 'Could not load routing settings.');
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const eligibleModels = useMemo(() => models.filter((model) => model.runtimeEligible), [models]);
