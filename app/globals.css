@@ -20,6 +20,33 @@ body {
   max-width: 100%;
 }
 
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.chat-composer-shell {
+  padding-bottom: max(0.4rem, env(safe-area-inset-bottom));
+}
+
+.abhiai-markdown > :first-child {
+  margin-top: 0 !important;
+}
+
+.abhiai-markdown > :last-child {
+  margin-bottom: 0 !important;
+}
+
+.abhiai-markdown img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.9rem;
+}
+
 /* Claude-like mobile conversation density: tight gutters, flat assistant replies, wide composer. */
 @media (max-width: 767px) {
   .h-screen > .md\:ml-72 > div[class~="flex-1"][class~="overflow-y-auto"] > div[class~="pb-8"][class~="max-w-3xl"] {
@@ -62,18 +89,6 @@ body {
     border-radius: 1.35rem !important;
   }
 
-  /* Thinking state follows the same flat assistant layout. */
-  .h-screen > .md\:ml-72 .justify-start.items-start > div:last-child {
-    flex: 1 1 auto !important;
-    min-width: 0 !important;
-    padding: 0.45rem 0 !important;
-    border: 0 !important;
-    border-radius: 0 !important;
-    background: transparent !important;
-    box-shadow: none !important;
-    backdrop-filter: none !important;
-  }
-
   /* Keep response typography readable without oversized mobile text. */
   .h-screen > .md\:ml-72 .prose {
     font-size: 0.95rem !important;
@@ -87,7 +102,7 @@ body {
 
   /* Composer sits close to the phone edges, like modern AI chat apps. */
   .h-screen > .md\:ml-72 > div[class~="p-4"][class~="bg-gradient-to-t"] {
-    padding: 0.5rem 0.75rem 0.4rem !important;
+    padding: 0.5rem 0.75rem max(0.4rem, env(safe-area-inset-bottom)) !important;
   }
 
   .h-screen > .md\:ml-72 > div[class~="p-4"][class~="bg-gradient-to-t"] > .max-w-3xl {
@@ -100,6 +115,11 @@ body {
   .h-screen > .md\:ml-72 .prose pre,
   .h-screen > .md\:ml-72 .prose table {
     max-width: 100% !important;
+  }
+
+  .abhiai-markdown pre,
+  .abhiai-markdown table {
+    font-size: 0.84rem;
   }
 
   /* Prevent the right-side header controls from pushing the theme button off-screen. */
