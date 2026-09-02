@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Message } from "@/types/chat";
 
 export type { Message } from "@/types/chat";
@@ -13,6 +13,7 @@ export interface ChatSession {
 
 const SESSIONS_KEY = "abhiai_sessions";
 const CURRENT_SESSION_KEY = "abhiai_current_session";
+const MODEL_CHANGED_EVENT = "abhiai:model-changed";
 
 function sortSessions(items: ChatSession[]) {
   return [...items].sort((a, b) => {
@@ -79,6 +80,16 @@ export function useChatHistory() {
     setCurrentSessionIdState(id);
     persistCurrentSessionId(id);
   };
+
+  useEffect(() => {
+    const handleModelChanged = () => {
+      setCurrentSessionIdState(null);
+      persistCurrentSessionId(null);
+    };
+
+    window.addEventListener(MODEL_CHANGED_EVENT, handleModelChanged);
+    return () => window.removeEventListener(MODEL_CHANGED_EVENT, handleModelChanged);
+  }, []);
 
   const createSession = (initialTitle?: string, initialMessages: Message[] = []) => {
     const titleMessage = initialMessages.find((message) => message.role === "user");
