@@ -3,7 +3,6 @@
 import { Menu } from 'lucide-react';
 import { AbhiLogo } from '@/components/brand/logo';
 import ModelSelector from '@/components/chat/model-selector';
-import { ThemeToggle } from '@/components/ui/theme-toggle';
 
 export default function MobileChatChrome() {
   const openSidebar = () => {
@@ -27,9 +26,7 @@ export default function MobileChatChrome() {
           <AbhiLogo variant="full" size="sm" href="/" />
         </div>
 
-        <div className="abhiai-mobile-theme">
-          <ThemeToggle variant="compact" />
-        </div>
+        <div className="abhiai-mobile-topbar-spacer" aria-hidden="true" />
       </div>
 
       <div className="abhiai-mobile-model-dock md:hidden">
