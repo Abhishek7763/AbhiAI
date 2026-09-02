@@ -3,6 +3,7 @@ import { getInstructions } from "@/lib/instructions";
 import { resolveRoutePlan, RouteCandidate } from "@/lib/ai/router";
 import { getProviderAdapter } from "@/lib/ai/providers/registry";
 import { logUsageEvent } from "@/lib/usage-logger";
+import { recordRuntimeModelFailure, recordRuntimeModelSuccess } from "@/lib/ai/runtime-health";
 import {
   formatDocumentsForPrompt,
   isGeminiNativeAttachment,
@@ -39,11 +40,7 @@ export async function POST(req: Request) {
     }
 
     const globalInstructions = getInstructions().systemPrompt || 'You are AbhiAI, an intelligent assistant created by Abhishek.';
-
-    const executionChain: RouteCandidate[] = [
-      routePlan.primary,
-      ...routePlan.fallbacks
-    ];
+    const executionChain: RouteCandidate[] = [routePlan.primary, ...routePlan.fallbacks];
 
     let lastError: string | null = null;
     let successfulReply: string | null = null;
@@ -51,11 +48,7 @@ export async function POST(req: Request) {
 
     for (const candidate of executionChain) {
       try {
-        const combinedPrompt = [
-          globalInstructions,
-          candidate.systemPrompt
-        ].filter(Boolean).join('\n\n');
-
+        const combinedPrompt = [globalInstructions, candidate.systemPrompt].filter(Boolean).join('\n\n');
         const documentTextAppendix = formatDocumentsForPrompt(currentAttachments, {
           skipNativePdf: candidate.providerId === 'google',
         });
@@ -85,7 +78,6 @@ export async function POST(req: Request) {
         if (!adapter) {
           throw new Error(`Adapter for provider ${candidate.providerId} could not be resolved`);
         }
-
         if (!candidate.apiKey) {
           throw new Error(`No runtime API key is available for ${candidate.name}`);
         }
@@ -98,11 +90,13 @@ export async function POST(req: Request) {
         );
 
         if (reply) {
+          await recordRuntimeModelSuccess(candidate.connectionId);
           successfulReply = reply;
           executedCandidate = candidate;
           break;
         }
       } catch (err: any) {
+        await recordRuntimeModelFailure(candidate.connectionId, err);
         console.warn(`[Failover] Execution failed on ${candidate.name} (${candidate.modelId}):`, err.message);
         lastError = err.message;
       }
