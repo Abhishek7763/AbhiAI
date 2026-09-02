@@ -1,6 +1,7 @@
 import type { AIConnection } from '@/lib/connections';
 import { listRuntimeConnections } from '@/lib/data/ai-config';
 import { getAbhiAIModeInstruction } from '@/lib/ai/modes';
+import { listCoolingRuntimeModelIds } from '@/lib/ai/runtime-health';
 
 export interface RouteCandidate {
   connectionId: string;
@@ -45,12 +46,15 @@ export async function resolveRoutePlan(
   requestedModelOrAlias: string,
   requiresMultimodal: boolean = false,
 ): Promise<SmartRoutePlan> {
-  const runtimeConnections = await listRuntimeConnections();
-  const allConnections = runtimeConnections.filter((connection) => connection.isActive && connection.apiKey);
+  const [runtimeConnections, coolingModelIds] = await Promise.all([
+    listRuntimeConnections(),
+    listCoolingRuntimeModelIds(),
+  ]);
 
-  // Native image/PDF input currently routes only through Google Gemini. Keeping
-  // the compatibility decision here prevents an incompatible requested model
-  // from becoming primary while only the fallbacks are filtered.
+  const allConnections = runtimeConnections.filter(
+    (connection) => connection.isActive && connection.apiKey && !coolingModelIds.has(connection.id),
+  );
+
   const compatibleConnections = requiresMultimodal
     ? allConnections.filter((connection) => connection.providerId === 'google')
     : allConnections;
