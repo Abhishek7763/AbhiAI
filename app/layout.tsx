@@ -3,6 +3,7 @@ import './globals.css';
 import './mobile-chat-polish.css';
 import { AppStructureFlowBackground } from '@/components/effects/structure-flow-background';
 import { ServiceWorkerRegistration } from '@/components/pwa/service-worker-registration';
+import { PublicAiTurnstile } from '@/components/security/public-ai-turnstile';
 
 const publicImageStudioEnabled = process.env.NEXT_PUBLIC_ENABLE_PUBLIC_IMAGE_STUDIO === 'true';
 const liveVoiceEnabled = process.env.NEXT_PUBLIC_ENABLE_LIVE_VOICE === 'true';
@@ -70,6 +71,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <div className="relative z-10 min-h-screen">
           {children}
         </div>
+        <PublicAiTurnstile />
         <ServiceWorkerRegistration />
       </body>
     </html>

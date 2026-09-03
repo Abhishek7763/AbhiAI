@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI } from '@google/genai';
-import { getStoredSettings } from '@/lib/data/admin-config';
 import { getStoredProviderApiKey, listProviders } from '@/lib/data/ai-config';
 import { logUsageEvent } from '@/lib/usage-logger';
 import { logger } from '@/lib/logger';
+import { moderateImagePrompt } from '@/lib/security/image-moderation';
+import { protectPublicAiRequest } from '@/lib/security/public-api-guard';
 
 type ImageEngine = 'auto' | 'imagen' | 'openai' | 'dalle' | 'stability' | 'flux';
 
@@ -234,6 +235,10 @@ export async function POST(req: NextRequest) {
   let cleanPrompt = '';
   let attempts = 0;
 
+  const guard = await protectPublicAiRequest(req, 'image');
+  if (!guard.ok) return guard.response;
+  const settings = guard.settings;
+
   try {
     const body = await req.json() as Record<string, unknown>;
     const prompt = body.prompt;
@@ -247,10 +252,27 @@ export async function POST(req: NextRequest) {
     }
 
     cleanPrompt = prompt.trim();
-    const settings = await getStoredSettings();
     if (cleanPrompt.length > settings.maxPromptLength) {
       return NextResponse.json(
         { error: `Prompt is too long. Maximum ${settings.maxPromptLength} characters.` },
+        { status: 400 },
+      );
+    }
+
+    const moderation = moderateImagePrompt(cleanPrompt);
+    if (!moderation.allowed) {
+      await recordImageUsage({
+        provider: 'blocked',
+        model: 'image-prompt-moderation',
+        promptLength: cleanPrompt.length,
+        responseLength: 0,
+        startedAt,
+        failoverUsed: false,
+        status: 'error',
+        errorCode: `IMAGE_PROMPT_BLOCKED_${moderation.category || 'POLICY'}`.toUpperCase().replace(/-/g, '_'),
+      });
+      return NextResponse.json(
+        { error: 'This image request cannot be generated safely. Please revise the prompt.' },
         { status: 400 },
       );
     }

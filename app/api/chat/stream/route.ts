@@ -8,6 +8,7 @@ import { withStreamTimeout, withTimeout } from "@/lib/ai/timeout";
 import { sanitizeChatHistory, validateChatRequestSize, validateUserMessage } from "@/lib/ai/chat-input";
 import { fetchWebGroundingContext, type SearchResult } from "@/lib/ai/web-search";
 import { logger } from "@/lib/logger";
+import { protectPublicAiRequest } from "@/lib/security/public-api-guard";
 import {
   formatDocumentsForPrompt,
   isGeminiNativeAttachment,
@@ -63,6 +64,9 @@ export async function POST(req: NextRequest) {
       headers: { "Content-Type": "application/json" },
     });
   }
+
+  const guard = await protectPublicAiRequest(req, 'chat');
+  if (!guard.ok) return guard.response;
 
   try {
     const { message, history, modelId, attachments, webSearch } = await req.json();
