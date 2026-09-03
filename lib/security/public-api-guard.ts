@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server';
 import { getStoredSettings } from '@/lib/data/admin-config';
 import { logger } from '@/lib/logger';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { createClient as createUserClient } from '@/lib/supabase/server';
 import { extractClientIp, isTrustedRequestSource, parseAllowedOrigins } from '@/lib/security/request-origin';
 
 type PublicApiScope = 'chat' | 'image';
@@ -12,6 +13,7 @@ type PublicApiScope = 'chat' | 'image';
 type GuardSuccess = {
   ok: true;
   settings: Awaited<ReturnType<typeof getStoredSettings>>;
+  userId: string | null;
 };
 
 type GuardFailure = {
@@ -37,6 +39,9 @@ type TurnstileResult = {
   'error-codes'?: string[];
 };
 
+const AUTHENTICATED_RPM_MULTIPLIER = 3;
+const AUTHENTICATED_DAILY_MULTIPLIER = 5;
+
 function configuredAllowedOrigins(requestUrl: string) {
   const origins = parseAllowedOrigins(process.env.PUBLIC_API_ALLOWED_ORIGINS);
   const vercelUrls = [process.env.VERCEL_URL, process.env.VERCEL_PROJECT_PRODUCTION_URL]
@@ -48,7 +53,19 @@ function configuredAllowedOrigins(requestUrl: string) {
   return origins;
 }
 
-function rateLimitIdentifier(req: Request, scope: PublicApiScope) {
+async function resolveAuthenticatedUserId() {
+  try {
+    const supabase = await createUserClient();
+    const { data, error } = await supabase.auth.getClaims();
+    if (error) return null;
+    const userId = data?.claims?.sub;
+    return typeof userId === 'string' && userId.length > 0 ? userId : null;
+  } catch {
+    return null;
+  }
+}
+
+function rateLimitIdentifier(req: Request, scope: PublicApiScope, userId: string | null) {
   const secret =
     process.env.RATE_LIMIT_HASH_SALT ||
     process.env.AI_KEYS_ENCRYPTION_KEY ||
@@ -59,9 +76,10 @@ function rateLimitIdentifier(req: Request, scope: PublicApiScope) {
 
   const ip = extractClientIp(req.headers);
   const fallbackIdentity = `${ip}|${(req.headers.get('user-agent') || 'unknown').slice(0, 160)}`;
-  const identity = ip === 'unknown' ? fallbackIdentity : ip;
+  const guestIdentity = ip === 'unknown' ? fallbackIdentity : ip;
+  const identity = userId ? `user:${userId}` : `guest:${guestIdentity}`;
   const digest = createHmac('sha256', secret).update(identity).digest('hex');
-  return `${scope}:${digest}`;
+  return `${scope}:${userId ? 'user' : 'guest'}:${digest}`;
 }
 
 async function checkRateLimit(
@@ -69,8 +87,9 @@ async function checkRateLimit(
   scope: PublicApiScope,
   rpm: number,
   daily: number,
+  userId: string | null,
 ): Promise<NextResponse | null> {
-  const identifier = rateLimitIdentifier(req, scope);
+  const identifier = rateLimitIdentifier(req, scope, userId);
   if (!identifier) {
     logger.error('Rate limiting is unavailable because no server-side hashing secret is configured.');
     return NextResponse.json(
@@ -228,16 +247,19 @@ export async function protectPublicAiRequest(req: Request, scope: PublicApiScope
     };
   }
 
-  const rateLimitFailure = await checkRateLimit(
-    req,
-    scope,
-    settings.rateLimitRPM,
-    settings.maxDailyRequestsPerIP,
-  );
+  const userId = await resolveAuthenticatedUserId();
+  const rateLimitRPM = userId
+    ? Math.max(settings.rateLimitRPM, settings.rateLimitRPM * AUTHENTICATED_RPM_MULTIPLIER)
+    : settings.rateLimitRPM;
+  const dailyLimit = userId
+    ? Math.max(settings.maxDailyRequestsPerIP, settings.maxDailyRequestsPerIP * AUTHENTICATED_DAILY_MULTIPLIER)
+    : settings.maxDailyRequestsPerIP;
+
+  const rateLimitFailure = await checkRateLimit(req, scope, rateLimitRPM, dailyLimit, userId);
   if (rateLimitFailure) return { ok: false, response: rateLimitFailure };
 
   const turnstileFailure = await verifyTurnstile(req);
   if (turnstileFailure) return { ok: false, response: turnstileFailure };
 
-  return { ok: true, settings };
+  return { ok: true, settings, userId };
 }

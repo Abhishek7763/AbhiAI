@@ -2,6 +2,7 @@
 
 import React, { useSyncExternalStore } from 'react';
 import { Sun, Moon, Monitor } from 'lucide-react';
+import { AccountMenu } from '@/components/auth/account-menu';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 
@@ -87,19 +88,22 @@ export function ThemeToggle({ variant = 'segmented', className = '' }: ThemeTogg
         window.matchMedia('(prefers-color-scheme: dark)').matches);
 
     return (
-      <button
-        id="theme-toggle-compact-btn"
-        type="button"
-        onClick={handleToggleNext}
-        title={`Switch to ${isDark ? 'Light' : 'Dark'} Mode (Current: ${theme})`}
-        className={`relative flex shrink-0 items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/90 dark:bg-zinc-900/90 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors shadow-2xs overflow-visible ${className}`}
-      >
-        {isDark ? (
-          <Sun className="block w-4 h-4 shrink-0 text-amber-500 hover:rotate-45 transition-transform" />
-        ) : (
-          <Moon className="block w-4 h-4 shrink-0 text-indigo-600 dark:text-indigo-400 hover:-rotate-12 transition-transform" />
-        )}
-      </button>
+      <>
+        <button
+          id="theme-toggle-compact-btn"
+          type="button"
+          onClick={handleToggleNext}
+          title={`Switch to ${isDark ? 'Light' : 'Dark'} Mode (Current: ${theme})`}
+          className={`relative flex shrink-0 items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/90 dark:bg-zinc-900/90 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors shadow-2xs overflow-visible ${className}`}
+        >
+          {isDark ? (
+            <Sun className="block w-4 h-4 shrink-0 text-amber-500 hover:rotate-45 transition-transform" />
+          ) : (
+            <Moon className="block w-4 h-4 shrink-0 text-indigo-600 dark:text-indigo-400 hover:-rotate-12 transition-transform" />
+          )}
+        </button>
+        <AccountMenu />
+      </>
     );
   }
 
@@ -112,12 +116,8 @@ export function ThemeToggle({ variant = 'segmented', className = '' }: ThemeTogg
   return (
     <div className={`space-y-1.5 ${className}`} id="theme-toggle-segmented">
       <div className="flex items-center justify-between px-1">
-        <span className="text-[11px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">
-          Appearance
-        </span>
-        <span className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400 capitalize">
-          {theme}
-        </span>
+        <span className="text-[11px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">Appearance</span>
+        <span className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400 capitalize">{theme}</span>
       </div>
 
       <div className="grid grid-cols-3 gap-1 bg-zinc-100 dark:bg-zinc-800/80 p-1 rounded-xl border border-zinc-200/80 dark:border-zinc-700/60">

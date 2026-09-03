@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI } from '@google/genai';
 import { getStoredProviderApiKey, listProviders } from '@/lib/data/ai-config';
@@ -5,6 +6,7 @@ import { logUsageEvent } from '@/lib/usage-logger';
 import { logger } from '@/lib/logger';
 import { moderateImagePrompt } from '@/lib/security/image-moderation';
 import { protectPublicAiRequest } from '@/lib/security/public-api-guard';
+import { createClient as createSupabaseServerClient } from '@/lib/supabase/server';
 
 type ImageEngine = 'auto' | 'imagen' | 'openai' | 'dalle' | 'stability' | 'flux';
 
@@ -19,6 +21,8 @@ type ImageSuccess = {
 const OPENAI_IMAGE_MODEL = 'gpt-image-2';
 const GEMINI_IMAGE_MODEL = 'gemini-3.1-flash-image';
 const STABILITY_IMAGE_MODEL = 'stable-image-core';
+const GENERATED_IMAGE_BUCKET = 'generated-images';
+const MAX_STORED_IMAGE_BYTES = 10 * 1024 * 1024;
 
 function enhancePrompt(prompt: string, style: string) {
   switch (style) {
@@ -86,6 +90,82 @@ async function recordImageUsage(args: {
   });
 }
 
+function parseDataImage(imageUrl: string) {
+  const match = /^data:(image\/(?:png|jpeg|webp));base64,([\s\S]+)$/.exec(imageUrl);
+  if (!match) return null;
+  const mimeType = match[1];
+  const extension = mimeType === 'image/jpeg' ? 'jpg' : mimeType.split('/')[1];
+  return { mimeType, extension, bytes: Buffer.from(match[2], 'base64') };
+}
+
+async function persistGeneratedImage(args: {
+  userId: string | null;
+  result: ImageSuccess;
+  prompt: string;
+  enhancedPrompt: string;
+  style: string;
+  aspectRatio: string;
+}) {
+  if (!args.userId) return null;
+
+  try {
+    const supabase = await createSupabaseServerClient();
+    let storagePath: string | null = null;
+    let durableUrl = args.result.imageUrl;
+    const dataImage = parseDataImage(args.result.imageUrl);
+
+    if (dataImage) {
+      if (dataImage.bytes.byteLength > MAX_STORED_IMAGE_BYTES) {
+        logger.warn('Generated image is too large for AbhiAI cloud history.');
+        return null;
+      }
+
+      storagePath = `${args.userId}/${Date.now()}-${randomUUID()}.${dataImage.extension}`;
+      const { error: uploadError } = await supabase.storage
+        .from(GENERATED_IMAGE_BUCKET)
+        .upload(storagePath, dataImage.bytes, {
+          contentType: dataImage.mimeType,
+          cacheControl: '3600',
+          upsert: false,
+        });
+
+      if (uploadError) {
+        logger.warn('Could not store generated image bytes in Supabase Storage.', uploadError);
+        return null;
+      }
+      durableUrl = `storage://${storagePath}`;
+    }
+
+    const { data, error } = await supabase
+      .from('generated_images')
+      .insert({
+        user_id: args.userId,
+        prompt: args.prompt,
+        enhanced_prompt: args.enhancedPrompt,
+        url: durableUrl,
+        storage_path: storagePath,
+        provider: args.result.provider,
+        style: args.style,
+        aspect_ratio: args.aspectRatio,
+      })
+      .select('id,storage_path')
+      .single();
+
+    if (error) {
+      if (storagePath) {
+        await supabase.storage.from(GENERATED_IMAGE_BUCKET).remove([storagePath]);
+      }
+      logger.warn('Could not save generated image metadata.', error);
+      return null;
+    }
+
+    return { id: data.id as string, storagePath: data.storage_path as string | null };
+  } catch (error) {
+    logger.warn('Generated image cloud history persistence failed.', error);
+    return null;
+  }
+}
+
 async function generateWithGemini(apiKey: string, enhancedPrompt: string, aspectRatio: string): Promise<ImageSuccess | null> {
   const ai = new GoogleGenAI({ apiKey });
   let geminiAspect: '1:1' | '3:4' | '4:3' | '9:16' | '16:9' = '1:1';
@@ -141,9 +221,7 @@ async function generateWithOpenAI(apiKey: string, enhancedPrompt: string, aspect
 
   const data = await response.json();
   const first = data?.data?.[0];
-  const imageUrl = first?.b64_json
-    ? `data:image/png;base64,${first.b64_json}`
-    : first?.url;
+  const imageUrl = first?.b64_json ? `data:image/png;base64,${first.b64_json}` : first?.url;
   if (!imageUrl) return null;
 
   return {
@@ -295,6 +373,16 @@ export async function POST(req: NextRequest) {
         failoverUsed: attempts > 1,
         status: 'success',
       });
+
+      const savedImage = await persistGeneratedImage({
+        userId: guard.userId,
+        result,
+        prompt: cleanPrompt,
+        enhancedPrompt,
+        style,
+        aspectRatio,
+      });
+
       return NextResponse.json({
         success: true,
         imageUrl: result.imageUrl,
@@ -308,6 +396,8 @@ export async function POST(req: NextRequest) {
         timestamp: Date.now(),
         seed: result.seed,
         freeOnlyMode,
+        generatedImageId: savedImage?.id ?? null,
+        storagePath: savedImage?.storagePath ?? null,
       });
     };
 
