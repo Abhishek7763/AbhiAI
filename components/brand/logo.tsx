@@ -1,8 +1,7 @@
 'use client';
 
-import React from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
-import { Sparkles } from 'lucide-react';
 
 export interface AbhiLogoProps {
   variant?: 'full' | 'icon' | 'responsive';
@@ -12,93 +11,77 @@ export interface AbhiLogoProps {
   size?: 'sm' | 'md' | 'lg' | 'hero';
 }
 
+const MARK_SIZES = {
+  sm: 'w-7 h-7',
+  md: 'w-8 h-8',
+  lg: 'w-10 h-10',
+  hero: 'w-14 h-14 sm:w-16 sm:h-16',
+} as const;
+
+const TEXT_SIZES = {
+  sm: 'text-[17px]',
+  md: 'text-[20px]',
+  lg: 'text-[26px]',
+  hero: 'text-[32px] sm:text-[40px]',
+} as const;
+
 export function AbhiLogo({
   variant = 'responsive',
   href = '/',
   className = '',
+  priority = false,
   size = 'md',
 }: AbhiLogoProps) {
-  // Size mappings
-  const iconSizes = {
-    sm: 'w-7 h-7',
-    md: 'w-8 h-8',
-    lg: 'w-10 h-10',
-    hero: 'w-14 h-14 sm:w-16 sm:h-16',
-  };
-
-  const sparkleSizes = {
-    sm: 'w-3.5 h-3.5',
-    md: 'w-4 h-4',
-    lg: 'w-5 h-5',
-    hero: 'w-7 h-7 sm:w-8 sm:h-8',
-  };
-
-  const textSizes = {
-    sm: 'text-sm',
-    md: 'text-base',
-    lg: 'text-xl',
-    hero: 'text-2xl sm:text-3xl',
-  };
-
-  const aiBadgeSizes = {
-    sm: 'text-[10px] px-1 py-0.2',
-    md: 'text-xs px-1.5 py-0.5',
-    lg: 'text-sm px-2 py-0.5',
-    hero: 'text-base sm:text-lg px-2.5 py-1',
-  };
-
-  const emblem = (
-    <div className={`relative ${iconSizes[size]} rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-cyan-500 p-[1.5px] shadow-sm flex items-center justify-center shrink-0`}>
-      <div className="w-full h-full bg-white dark:bg-zinc-950 rounded-[10px] flex items-center justify-center">
-        <Sparkles className={`${sparkleSizes[size]} text-blue-600 dark:text-blue-400 animate-pulse`} />
-      </div>
-    </div>
+  const mark = (
+    <span
+      className={`relative inline-flex shrink-0 items-center justify-center ${MARK_SIZES[size]}`}
+      aria-hidden="true"
+    >
+      <Image
+        src="/branding/abhiai-brand-mark.png"
+        alt=""
+        width={1024}
+        height={916}
+        priority={priority}
+        className="h-full w-full object-contain"
+      />
+    </span>
   );
 
   const wordmark = (
-    <div className="flex items-center gap-1.5 select-none">
-      <span className={`font-bold tracking-tight text-zinc-900 dark:text-zinc-50 ${textSizes[size]}`}>
-        Abhi
-      </span>
-      <span className={`font-extrabold bg-gradient-to-r from-blue-600 to-cyan-500 text-white rounded-md tracking-wider ${aiBadgeSizes[size]} shadow-2xs`}>
-        AI
-      </span>
-    </div>
+    <span
+      data-abhiai-wordmark
+      className={`inline-flex items-baseline whitespace-nowrap font-bold leading-none tracking-[-0.045em] ${TEXT_SIZES[size]}`}
+      style={{ fontFamily: 'var(--font-abhiai-brand), var(--font-abhiai-sans), sans-serif' }}
+      aria-label="AbhiAI"
+    >
+      <span className="text-[#071634] dark:text-zinc-50">Abhi</span>
+      <span className="text-[#146BFF]">AI</span>
+    </span>
   );
 
   const content = (
-    <div className={`inline-flex items-center gap-2.5 select-none ${className}`}>
-      {variant === 'icon' && emblem}
-      {variant === 'full' && (
-        <>
-          {emblem}
-          {wordmark}
-        </>
-      )}
-      {variant === 'responsive' && (
-        <>
-          {emblem}
-          <div className="hidden sm:flex items-center gap-1.5">
-            {wordmark}
-          </div>
-        </>
-      )}
-    </div>
+    <span
+      className={`inline-flex min-w-0 items-center gap-1.5 sm:gap-2 select-none ${className}`}
+      data-abhiai-brand-lockup
+    >
+      {mark}
+      {variant === 'full' && wordmark}
+      {variant === 'responsive' && <span className="hidden sm:inline-flex">{wordmark}</span>}
+    </span>
   );
 
-  if (href) {
-    return (
-      <Link 
-        href={href} 
-        aria-label="AbhiAI Home" 
-        className="inline-flex items-center focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-xl transition-transform hover:scale-[1.02]"
-      >
-        {content}
-      </Link>
-    );
-  }
+  if (!href) return content;
 
-  return content;
+  return (
+    <Link
+      href={href}
+      aria-label="AbhiAI Home"
+      className="inline-flex min-w-0 items-center rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/80 transition-transform hover:scale-[1.015] active:scale-[0.99]"
+    >
+      {content}
+    </Link>
+  );
 }
 
 export default AbhiLogo;

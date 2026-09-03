@@ -1,8 +1,9 @@
 import type { Metadata } from 'next';
-import { Geist } from 'next/font/google';
+import { Geist, Space_Grotesk } from 'next/font/google';
 import './globals.css';
 import './mobile-chat-polish.css';
 import './phase4-polish.css';
+import './phase41-brand-mobile.css';
 import { AppStructureFlowBackground } from '@/components/effects/structure-flow-background';
 import { ServiceWorkerRegistration } from '@/components/pwa/service-worker-registration';
 import { PublicAiTurnstile } from '@/components/security/public-ai-turnstile';
@@ -14,34 +15,46 @@ const geist = Geist({
   variable: '--font-abhiai-sans',
 });
 
+const spaceGrotesk = Space_Grotesk({
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--font-abhiai-brand',
+});
+
 const publicImageStudioEnabled = process.env.NEXT_PUBLIC_ENABLE_PUBLIC_IMAGE_STUDIO === 'true';
 const liveVoiceEnabled = process.env.NEXT_PUBLIC_ENABLE_LIVE_VOICE === 'true';
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://abhiai.vercel.app'),
-  title: 'AbhiAI',
-  description: 'A modern, premium, mobile-first AI platform.',
+  title: {
+    default: 'AbhiAI',
+    template: '%s · AbhiAI',
+  },
+  description: 'AbhiAI — Intelligence. Clarity. Innovation.',
   icons: {
-    icon: '/branding/abhiai-icon.png',
-    apple: '/branding/abhiai-icon.png',
+    icon: [{ url: '/branding/abhiai-favicon.svg', sizes: 'any', type: 'image/svg+xml' }],
   },
   openGraph: {
     title: 'AbhiAI',
-    description: 'A modern, premium, mobile-first AI platform.',
+    description: 'Intelligence. Clarity. Innovation.',
     type: 'website',
-    images: ['/branding/abhiai-logo.png'],
+    images: ['/branding/abhiai-brand-mark.png'],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'AbhiAI',
-    description: 'A modern, premium, mobile-first AI platform.',
-    images: ['/branding/abhiai-logo.png'],
+    description: 'Intelligence. Clarity. Innovation.',
+    images: ['/branding/abhiai-brand-mark.png'],
   },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${geist.variable} antialiased`} suppressHydrationWarning>
+    <html
+      lang="en"
+      className={`${geist.variable} ${spaceGrotesk.variable} antialiased`}
+      suppressHydrationWarning
+    >
       <head>
         <script
           dangerouslySetInnerHTML={{

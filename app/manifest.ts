@@ -2,23 +2,19 @@ import { MetadataRoute } from 'next';
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'AbhiAI — Intelligent AI Assistant',
+    name: 'AbhiAI — Intelligence. Clarity. Innovation.',
     short_name: 'AbhiAI',
-    description: 'Ultra-fast multi-model AI assistant by Abhishek with zero-downtime routing, agents, and vision.',
+    description: 'A modern multi-model AI assistant for reasoning, coding, creating, and exploring.',
     start_url: '/',
     display: 'standalone',
-    background_color: '#090a0f',
-    theme_color: '#090a0f',
+    background_color: '#071634',
+    theme_color: '#071634',
     icons: [
       {
-        src: '/branding/abhiai-icon.png',
-        sizes: '192x192',
-        type: 'image/png',
-      },
-      {
-        src: '/branding/abhiai-icon.png',
-        sizes: '512x512',
-        type: 'image/png',
+        src: '/branding/abhiai-brand-icon.svg',
+        sizes: 'any',
+        type: 'image/svg+xml',
+        purpose: 'any maskable',
       },
     ],
   };
