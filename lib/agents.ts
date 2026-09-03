@@ -1,5 +1,3 @@
-import { readJsonFile, writeJsonFile } from './config/file-store';
-
 export interface AIAgent {
   id: string;
   name: string;
@@ -15,6 +13,8 @@ export interface AIAgent {
   createdAt: string;
 }
 
+// These are seed values only. Runtime reads/writes are handled by
+// lib/data/admin-config.ts against Supabase ai_agents.
 export const DEFAULT_AGENTS: AIAgent[] = [
   {
     id: 'agent-study',
@@ -33,7 +33,7 @@ Your goal is to help students learn deeply by:
     sampleStarters: [
       'Explain Quantum Computing using simple everyday analogies',
       'Quiz me on World War II history with 3 multiple-choice questions',
-      'Summarize the core concepts of photosynthesis'
+      'Summarize the core concepts of photosynthesis',
     ],
     createdAt: new Date().toISOString(),
   },
@@ -54,7 +54,7 @@ Follow strict clean code principles:
     sampleStarters: [
       'Write a high-performance LRU cache in TypeScript with O(1) ops',
       'Review this SQL query and suggest index optimizations',
-      'Help me design a resilient webhook processing pipeline'
+      'Help me design a resilient webhook processing pipeline',
     ],
     createdAt: new Date().toISOString(),
   },
@@ -75,7 +75,7 @@ Provide comprehensive, structured analyses with:
     sampleStarters: [
       'Synthesize current breakthroughs in solid-state battery technology',
       'Compare microservices vs modular monoliths for early-stage startups',
-      'Analyze the economic impacts of AI agent automation in finance'
+      'Analyze the economic impacts of AI agent automation in finance',
     ],
     createdAt: new Date().toISOString(),
   },
@@ -93,22 +93,8 @@ Craft captivating, high-impact prose tailored to the requested audience with com
     sampleStarters: [
       'Write a compelling product launch email sequence for a new SaaS',
       'Draft a high-engagement LinkedIn thought leadership post',
-      'Write a 60-second YouTube shorts script on space exploration'
+      'Write a 60-second YouTube shorts script on space exploration',
     ],
     createdAt: new Date().toISOString(),
-  }
+  },
 ];
-
-const AGENTS_FILE = 'agents.json';
-
-export function getAgents(): AIAgent[] {
-  const parsed = readJsonFile<AIAgent[]>(AGENTS_FILE);
-  if (Array.isArray(parsed) && parsed.length > 0) {
-    return parsed;
-  }
-  return DEFAULT_AGENTS;
-}
-
-export function saveAgents(agents: AIAgent[]): boolean {
-  return writeJsonFile(AGENTS_FILE, agents);
-}

@@ -35,6 +35,6 @@ async function persistUsageEvent(entry: Omit<UsageEntry, 'id' | 'timestamp'>) {
   }
 }
 
-export function logUsageEvent(entry: Omit<UsageEntry, 'id' | 'timestamp'>): void {
-  void persistUsageEvent(entry);
+export function logUsageEvent(entry: Omit<UsageEntry, 'id' | 'timestamp'>): Promise<void> {
+  return persistUsageEvent(entry);
 }

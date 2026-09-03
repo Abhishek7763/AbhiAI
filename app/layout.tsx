@@ -1,8 +1,11 @@
-import type {Metadata} from 'next';
+import type { Metadata } from 'next';
 import './globals.css';
 import './mobile-chat-polish.css';
 import { AppStructureFlowBackground } from '@/components/effects/structure-flow-background';
 import { ServiceWorkerRegistration } from '@/components/pwa/service-worker-registration';
+
+const publicImageStudioEnabled = process.env.NEXT_PUBLIC_ENABLE_PUBLIC_IMAGE_STUDIO === 'true';
+const liveVoiceEnabled = process.env.NEXT_PUBLIC_ENABLE_LIVE_VOICE === 'true';
 
 export const metadata: Metadata = {
   title: 'AbhiAI',
@@ -25,7 +28,7 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({children}: {children: React.ReactNode}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className="antialiased" suppressHydrationWarning>
       <head>
@@ -45,8 +48,24 @@ export default function RootLayout({children}: {children: React.ReactNode}) {
             `,
           }}
         />
+        {!liveVoiceEnabled && (
+          <style>{`button[title="Start Live Voice Conversation"] { display: none !important; }`}</style>
+        )}
+        {!publicImageStudioEnabled && (
+          <style>{`
+            button[title="Open AI Image Studio"],
+            button[title="Image Studio"],
+            button[title="Generate AI Image from prompt"],
+            .fixed.inset-y-0.left-0 button.bg-gradient-to-r { display: none !important; }
+          `}</style>
+        )}
       </head>
-      <body className="bg-white text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50 selection:bg-zinc-200 dark:selection:bg-zinc-800 transition-colors duration-200 relative min-h-screen" suppressHydrationWarning>
+      <body
+        className="bg-white text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50 selection:bg-zinc-200 dark:selection:bg-zinc-800 transition-colors duration-200 relative min-h-screen"
+        data-public-image-studio={publicImageStudioEnabled ? 'true' : 'false'}
+        data-live-voice={liveVoiceEnabled ? 'true' : 'false'}
+        suppressHydrationWarning
+      >
         <AppStructureFlowBackground />
         <div className="relative z-10 min-h-screen">
           {children}
