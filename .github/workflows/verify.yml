@@ -33,12 +33,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+          cache: npm
 
       - name: Install dependencies
-        run: bun install
+        run: npm install --no-audit --no-fund
 
       - name: Verify typecheck, lint, tests, and production build
         run: npm run verify
