@@ -11,9 +11,15 @@ export default function manifest(): MetadataRoute.Manifest {
     theme_color: '#071634',
     icons: [
       {
-        src: '/branding/abhiai-brand-icon.svg',
-        sizes: 'any',
-        type: 'image/svg+xml',
+        src: '/branding/abhiai-app-icon-dark-192.png',
+        sizes: '192x192',
+        type: 'image/png',
+        purpose: 'any',
+      },
+      {
+        src: '/branding/abhiai-app-icon-light-512.png',
+        sizes: '512x512',
+        type: 'image/png',
         purpose: 'maskable',
       },
     ],
