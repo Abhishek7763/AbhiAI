@@ -1,14 +1,25 @@
 import { AlertCircle, ArrowLeft } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import AdminLoginForm from '@/components/admin/admin-login-form'
+import { getCurrentAdmin } from '@/lib/security/admin-auth'
 
 export default async function LoginPage({
   searchParams,
 }: {
   searchParams: Promise<{ error?: string }>
 }) {
-  const { error } = await searchParams;
+  const [admin, params] = await Promise.all([
+    getCurrentAdmin(),
+    searchParams,
+  ])
+
+  if (admin) {
+    redirect('/admin')
+  }
+
+  const { error } = params
 
   return (
     <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center p-4">

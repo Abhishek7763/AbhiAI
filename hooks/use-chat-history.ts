@@ -30,6 +30,7 @@ const CURRENT_SESSION_KEY = "abhiai_current_session";
 const MODEL_CHANGED_EVENT = "abhiai:model-changed";
 export const CHAT_BACKUP_IMPORT_EVENT = "abhiai:chat-backup-import";
 const PERSIST_DELAY_MS = 180;
+const STREAM_UPDATE_INTERVAL_MS = 60;
 
 function sortSessions(items: ChatSession[]) {
   return [...items].sort((a, b) => {
@@ -156,9 +157,40 @@ export function useChatHistory() {
   const hydratedRef = useRef(false);
   const latestSessionsRef = useRef<ChatSession[]>(sessions);
   const persistTimerRef = useRef<number | null>(null);
+  const streamingTimerRef = useRef<number | null>(null);
+  const pendingStreamingUpdatesRef = useRef<Map<string, Message[]>>(new Map());
 
   const commitSessions = (updater: (previous: ChatSession[]) => ChatSession[]) => {
     setSessions((previous) => updater(previous));
+  };
+
+  const applyMessageUpdates = (updates: Map<string, Message[]>) => {
+    if (updates.size === 0) return;
+    const updatedAt = Date.now();
+
+    commitSessions((previous) => {
+      let changed = false;
+      const updated = previous.map((session) => {
+        const messages = updates.get(session.id);
+        if (!messages) return session;
+        changed = true;
+        return {
+          ...session,
+          messages,
+          updatedAt,
+        };
+      });
+
+      return changed ? sortSessions(updated) : previous;
+    });
+  };
+
+  const flushStreamingUpdates = () => {
+    streamingTimerRef.current = null;
+    const updates = pendingStreamingUpdatesRef.current;
+    if (updates.size === 0) return;
+    pendingStreamingUpdatesRef.current = new Map();
+    applyMessageUpdates(updates);
   };
 
   const setCurrentSessionId = (id: string | null) => {
@@ -232,6 +264,16 @@ export function useChatHistory() {
   }, [sessions]);
 
   useEffect(() => {
+    return () => {
+      if (streamingTimerRef.current !== null) {
+        window.clearTimeout(streamingTimerRef.current);
+        streamingTimerRef.current = null;
+      }
+      pendingStreamingUpdatesRef.current.clear();
+    };
+  }, []);
+
+  useEffect(() => {
     const persistLatestOnHide = () => {
       if (document.visibilityState !== "hidden") return;
       const latest = latestSessionsRef.current;
@@ -288,20 +330,23 @@ export function useChatHistory() {
   };
 
   const updateSession = (sessionId: string, newMessages: Message[]) => {
-    commitSessions((previous) => {
-      let found = false;
-      const updated = previous.map((session) => {
-        if (session.id !== sessionId) return session;
-        found = true;
-        return {
-          ...session,
-          messages: newMessages,
-          updatedAt: Date.now(),
-        };
-      });
+    const isStreamingUpdate = newMessages[newMessages.length - 1]?.isStreaming === true;
 
-      return found ? sortSessions(updated) : previous;
-    });
+    if (isStreamingUpdate) {
+      pendingStreamingUpdatesRef.current.set(sessionId, newMessages);
+      if (streamingTimerRef.current === null) {
+        streamingTimerRef.current = window.setTimeout(flushStreamingUpdates, STREAM_UPDATE_INTERVAL_MS);
+      }
+      return;
+    }
+
+    pendingStreamingUpdatesRef.current.delete(sessionId);
+    if (pendingStreamingUpdatesRef.current.size === 0 && streamingTimerRef.current !== null) {
+      window.clearTimeout(streamingTimerRef.current);
+      streamingTimerRef.current = null;
+    }
+
+    applyMessageUpdates(new Map([[sessionId, newMessages]]));
   };
 
   const renameSession = (sessionId: string, newTitle: string) => {
@@ -327,6 +372,7 @@ export function useChatHistory() {
   };
 
   const deleteSession = (sessionId: string) => {
+    pendingStreamingUpdatesRef.current.delete(sessionId);
     commitSessions((previous) => previous.filter((session) => session.id !== sessionId));
     if (currentSessionId === sessionId) {
       setCurrentSessionId(null);
@@ -334,6 +380,11 @@ export function useChatHistory() {
   };
 
   const clearAllSessions = () => {
+    pendingStreamingUpdatesRef.current.clear();
+    if (streamingTimerRef.current !== null) {
+      window.clearTimeout(streamingTimerRef.current);
+      streamingTimerRef.current = null;
+    }
     commitSessions(() => []);
     setCurrentSessionId(null);
   };
