@@ -406,12 +406,15 @@ export function useChatHistory() {
   }, [sessions]);
 
   useEffect(() => {
+    const cloudSyncTimers = cloudSyncTimersRef.current;
+    const pendingStreamingUpdates = pendingStreamingUpdatesRef.current;
+
     return () => {
       if (streamingTimerRef.current !== null) window.clearTimeout(streamingTimerRef.current);
       if (cloudAllTimerRef.current !== null) window.clearTimeout(cloudAllTimerRef.current);
-      for (const timer of cloudSyncTimersRef.current.values()) window.clearTimeout(timer);
-      cloudSyncTimersRef.current.clear();
-      pendingStreamingUpdatesRef.current.clear();
+      for (const timer of cloudSyncTimers.values()) window.clearTimeout(timer);
+      cloudSyncTimers.clear();
+      pendingStreamingUpdates.clear();
     };
   }, []);
 
