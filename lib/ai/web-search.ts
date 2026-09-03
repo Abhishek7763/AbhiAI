@@ -3,6 +3,8 @@
  * Provides real-time context and search grounding for live web queries.
  */
 
+import { logger } from '@/lib/logger';
+
 export interface SearchResult {
   title: string;
   url: string;
@@ -23,6 +25,7 @@ export async function fetchWebGroundingContext(query: string): Promise<{ context
     });
 
     if (!res.ok) {
+      logger.warn(`Web search grounding returned HTTP ${res.status}.`);
       return { contextText: '', sources: [] };
     }
 
@@ -65,7 +68,8 @@ export async function fetchWebGroundingContext(query: string): Promise<{ context
     return { contextText, sources };
   } catch (error) {
     const isTimeout = error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError');
-    console.warn(isTimeout ? 'Web search grounding timed out.' : 'Web search grounding error:', isTimeout ? undefined : error);
+    if (isTimeout) logger.warn('Web search grounding timed out.');
+    else logger.warn('Web search grounding failed.', error);
     return { contextText: '', sources: [] };
   }
 }

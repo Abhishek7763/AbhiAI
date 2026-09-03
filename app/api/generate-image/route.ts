@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
 import { getAppSettings } from "@/lib/app-settings";
+import { logger } from "@/lib/logger";
 
 export async function POST(req: NextRequest) {
   try {
@@ -9,9 +10,8 @@ export async function POST(req: NextRequest) {
       prompt,
       style = "photorealistic",
       aspectRatio = "1:1",
-      engine = "auto", // 'auto', 'flux', 'imagen', 'dalle', 'stability'
+      engine = "auto",
       negativePrompt,
-      resolution = "1024x1024",
     } = body;
 
     if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
@@ -24,12 +24,9 @@ export async function POST(req: NextRequest) {
     const appSettings = getAppSettings();
     const effectiveGeminiKey = appSettings.geminiApiKey || process.env.GEMINI_API_KEY;
     const effectiveOpenAIKey = appSettings.openaiApiKey || process.env.OPENAI_API_KEY;
-    const effectiveStabilityKey = appSettings.stabilityApiKey || process.env.STABILITY_API_KEY;
     const customEndpoint = appSettings.customImageApiEndpoint || process.env.CUSTOM_IMAGE_API_ENDPOINT;
 
     const cleanPrompt = prompt.trim();
-    
-    // Style Enhancement Prompt Formatter
     let enhancedPrompt = cleanPrompt;
     switch (style) {
       case "photorealistic":
@@ -63,7 +60,6 @@ export async function POST(req: NextRequest) {
         enhancedPrompt = cleanPrompt;
     }
 
-    // 0. Custom API Endpoint if configured
     if (customEndpoint) {
       try {
         const customRes = await fetch(customEndpoint, {
@@ -86,17 +82,14 @@ export async function POST(req: NextRequest) {
             });
           }
         }
-      } catch (custErr) {
-        console.warn("Custom Image endpoint error:", custErr);
+      } catch (error) {
+        logger.warn('Custom image endpoint failed; continuing to configured fallbacks.', error);
       }
     }
 
-    // 1. Try Gemini Imagen if requested or configured
     if ((engine === "imagen" || engine === "auto") && effectiveGeminiKey) {
       try {
         const ai = new GoogleGenAI({ apiKey: effectiveGeminiKey });
-        
-        // Map aspect ratio for Gemini
         let geminiAspect: "1:1" | "3:4" | "4:3" | "9:16" | "16:9" = "1:1";
         if (aspectRatio === "16:9" || aspectRatio === "9:16" || aspectRatio === "4:3" || aspectRatio === "3:4") {
           geminiAspect = aspectRatio;
@@ -133,12 +126,11 @@ export async function POST(req: NextRequest) {
             }
           }
         }
-      } catch (geminiErr: any) {
-        console.warn("Gemini Image generation fallback triggered:", geminiErr?.message || geminiErr);
+      } catch (error) {
+        logger.warn('Gemini image generation failed; continuing to configured fallbacks.', error);
       }
     }
 
-    // 2. Try OpenAI DALL-E 3 if API Key is configured
     if ((engine === "dalle" || (engine === "auto" && !effectiveGeminiKey)) && effectiveOpenAIKey) {
       try {
         let dalleSize = "1024x1024";
@@ -176,12 +168,11 @@ export async function POST(req: NextRequest) {
             });
           }
         }
-      } catch (dalleErr: any) {
-        console.warn("DALL-E generation fallback:", dalleErr?.message);
+      } catch (error) {
+        logger.warn('DALL-E image generation failed; continuing to fallback.', error);
       }
     }
 
-    // 3. High-Quality Flux Ultra HD / Photoreal Generation (Always reliable fallback & ultra-fast)
     let width = 1024;
     let height = 1024;
     if (aspectRatio === "16:9") {
@@ -200,7 +191,6 @@ export async function POST(req: NextRequest) {
 
     const seed = Math.floor(Math.random() * 10000000);
     const encodedPrompt = encodeURIComponent(enhancedPrompt);
-    // Use Pollinations Flux.1 model endpoint with high-definition rendering
     const fluxImageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${width}&height=${height}&seed=${seed}&nologo=true&enhance=false&model=flux`;
 
     return NextResponse.json({
@@ -214,10 +204,10 @@ export async function POST(req: NextRequest) {
       timestamp: Date.now(),
       seed,
     });
-  } catch (error: any) {
-    console.error("Image generation API error:", error);
+  } catch (error) {
+    logger.error('Image generation API error.', error);
     return NextResponse.json(
-      { error: error?.message || "Failed to generate image. Please try again." },
+      { error: error instanceof Error ? error.message : "Failed to generate image. Please try again." },
       { status: 500 }
     );
   }

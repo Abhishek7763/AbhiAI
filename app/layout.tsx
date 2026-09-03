@@ -1,7 +1,8 @@
 import type {Metadata} from 'next';
-import './globals.css'; // Global styles
+import './globals.css';
 import './mobile-chat-polish.css';
 import { AppStructureFlowBackground } from '@/components/effects/structure-flow-background';
+import { ServiceWorkerRegistration } from '@/components/pwa/service-worker-registration';
 
 export const metadata: Metadata = {
   title: 'AbhiAI',
@@ -33,12 +34,14 @@ export default function RootLayout({children}: {children: React.ReactNode}) {
             __html: `
               try {
                 const t = localStorage.getItem('theme');
-                if (t === 'dark' || (!t || t === 'system') && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                if (t === 'dark' || ((!t || t === 'system') && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
                   document.documentElement.classList.add('dark');
                 } else {
                   document.documentElement.classList.remove('dark');
                 }
-              } catch (_) {}
+              } catch {
+                document.documentElement.classList.remove('dark');
+              }
             `,
           }}
         />
@@ -48,21 +51,7 @@ export default function RootLayout({children}: {children: React.ReactNode}) {
         <div className="relative z-10 min-h-screen">
           {children}
         </div>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              if ('serviceWorker' in navigator) {
-                window.addEventListener('load', function() {
-                  navigator.serviceWorker.register('/sw.js').then(function(registration) {
-                    console.log('ServiceWorker registration successful');
-                  }, function(err) {
-                    console.log('ServiceWorker registration failed: ', err);
-                  });
-                });
-              }
-            `,
-          }}
-        />
+        <ServiceWorkerRegistration />
       </body>
     </html>
   );

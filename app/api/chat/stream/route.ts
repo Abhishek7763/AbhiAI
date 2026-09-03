@@ -7,6 +7,7 @@ import { recordRuntimeModelFailure, recordRuntimeModelSuccess } from "@/lib/ai/r
 import { withStreamTimeout, withTimeout } from "@/lib/ai/timeout";
 import { sanitizeChatHistory, validateChatRequestSize, validateUserMessage } from "@/lib/ai/chat-input";
 import { fetchWebGroundingContext, type SearchResult } from "@/lib/ai/web-search";
+import { logger } from "@/lib/logger";
 import {
   formatDocumentsForPrompt,
   isGeminiNativeAttachment,
@@ -137,7 +138,8 @@ export async function POST(req: NextRequest) {
           try {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
             return true;
-          } catch {
+          } catch (error) {
+            logger.debug('Streaming client disconnected while data was being emitted.', error);
             streamCancelled = true;
             return false;
           }
@@ -296,7 +298,9 @@ export async function POST(req: NextRequest) {
               recordRuntimeModelSuccess(candidate.connectionId, learnedLatencyMs),
               RUNTIME_HEALTH_WRITE_TIMEOUT_MS,
               'Runtime health update',
-            ).catch(() => undefined);
+            ).catch((healthError) => {
+              logger.warn('Could not record successful stream runtime health state.', healthError);
+            });
 
             if (!isCancelled()) emit({ type: 'done' });
             executionSucceeded = true;
@@ -327,10 +331,12 @@ export async function POST(req: NextRequest) {
               recordRuntimeModelFailure(candidate.connectionId, error),
               RUNTIME_HEALTH_WRITE_TIMEOUT_MS,
               'Runtime health update',
-            ).catch(() => undefined);
+            ).catch((healthError) => {
+              logger.warn('Could not record failed stream runtime health state.', healthError);
+            });
 
             const message = error instanceof Error ? error.message : String(error || 'Unknown stream error');
-            console.warn(`[Stream Failover] Error on ${candidate.name} (${candidate.modelId}):`, message);
+            logger.warn(`Stream failover on ${candidate.name} (${candidate.modelId}).`, message);
 
             if (candidateOutputChars > 0) {
               emit({
@@ -364,8 +370,8 @@ export async function POST(req: NextRequest) {
 
         try {
           controller.close();
-        } catch {
-          // Client may already have disconnected.
+        } catch (error) {
+          logger.debug('Streaming controller was already closed by the client.', error);
         }
       },
       cancel() {
@@ -386,7 +392,7 @@ export async function POST(req: NextRequest) {
       return new Response(null, { status: 499 });
     }
 
-    console.error("Stream Gateway Error:", error);
+    logger.error('Stream gateway error.', error);
     return new Response(JSON.stringify({ error: "Internal Server Error" }), {
       status: 500,
       headers: { "Content-Type": "application/json" },

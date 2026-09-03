@@ -6,6 +6,7 @@ import {
   Search, Shield, Check, RefreshCw, Cpu, Layers, HelpCircle
 } from 'lucide-react';
 import { PROVIDER_TEMPLATES } from '@/lib/ai/providers/registry';
+import { logger } from '@/lib/logger';
 
 interface AddProviderWizardProps {
   onSuccess: () => void;
@@ -19,8 +20,6 @@ export function AddProviderWizard({ onSuccess, onCancel }: AddProviderWizardProp
   const [customName, setCustomName] = useState('');
   const [customBaseUrl, setCustomBaseUrl] = useState('');
   const [scope, setScope] = useState<'public' | 'personal'>('public');
-
-  // Step 2: Testing & Discovery State
   const [testing, setTesting] = useState(false);
   const [discovering, setDiscovering] = useState(false);
   const [testResult, setTestResult] = useState<{ success?: boolean; message?: string } | null>(null);
@@ -28,10 +27,8 @@ export function AddProviderWizard({ onSuccess, onCancel }: AddProviderWizardProp
   const [selectedModelIds, setSelectedModelIds] = useState<string[]>([]);
   const [searchFilter, setSearchFilter] = useState('');
   const [freeOnlyFilter, setFreeOnlyFilter] = useState(false);
-
   const [saving, setSaving] = useState(false);
 
-  // Step 1 -> 2: Select Provider Template
   const handleSelectTemplate = (template: any) => {
     setSelectedTemplate(template);
     setCustomName(template.name);
@@ -42,7 +39,6 @@ export function AddProviderWizard({ onSuccess, onCancel }: AddProviderWizardProp
     setStep(2);
   };
 
-  // Test Connection
   const handleTestConnection = async () => {
     if (!apiKey) {
       setTestResult({ success: false, message: 'Please enter your API Key' });
@@ -64,7 +60,6 @@ export function AddProviderWizard({ onSuccess, onCancel }: AddProviderWizardProp
       const data = await res.json();
       if (res.ok && data.success) {
         setTestResult({ success: true, message: 'Connection successful and API key verified!' });
-        // Automatically start discovery on successful test
         handleDiscoverModels();
       } else {
         setTestResult({ success: false, message: data.error || 'Connection failed' });
@@ -76,7 +71,6 @@ export function AddProviderWizard({ onSuccess, onCancel }: AddProviderWizardProp
     }
   };
 
-  // Discover Models Automatically
   const handleDiscoverModels = async () => {
     if (!apiKey) return;
     setDiscovering(true);
@@ -93,17 +87,16 @@ export function AddProviderWizard({ onSuccess, onCancel }: AddProviderWizardProp
       const data = await res.json();
       if (res.ok && data.models) {
         setDiscoveredModels(data.models);
-        // Default select top 2 models or all if fewer
         const defaultSelected = data.models.slice(0, 3).map((m: any) => m.id);
         setSelectedModelIds(defaultSelected);
         setStep(3);
       } else {
-        // Fallback to template defaults
         setDiscoveredModels(selectedTemplate.defaultModels || []);
         setSelectedModelIds(selectedTemplate.defaultModels?.map((m: any) => m.id) || []);
         setStep(3);
       }
     } catch (e) {
+      logger.warn('Provider model discovery failed; using template defaults.', e);
       setDiscoveredModels(selectedTemplate.defaultModels || []);
       setSelectedModelIds(selectedTemplate.defaultModels?.map((m: any) => m.id) || []);
       setStep(3);
@@ -118,7 +111,6 @@ export function AddProviderWizard({ onSuccess, onCancel }: AddProviderWizardProp
     );
   };
 
-  // Step 3 -> Final Save
   const handleFinalSave = async () => {
     if (selectedModelIds.length === 0) {
       alert('Please select at least one model to import.');
@@ -127,7 +119,6 @@ export function AddProviderWizard({ onSuccess, onCancel }: AddProviderWizardProp
 
     setSaving(true);
     try {
-      // 1. Save Provider Configuration
       await fetch('/api/admin/providers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -138,7 +129,6 @@ export function AddProviderWizard({ onSuccess, onCancel }: AddProviderWizardProp
         }),
       });
 
-      // 2. Save Selected Connection and Models
       for (const modelId of selectedModelIds) {
         const modelInfo = discoveredModels.find(m => m.id === modelId) || {
           id: modelId,
@@ -165,7 +155,7 @@ export function AddProviderWizard({ onSuccess, onCancel }: AddProviderWizardProp
 
       onSuccess();
     } catch (e) {
-      console.error(e);
+      logger.error('Failed to save provider and discovered models.', e);
       alert('Failed to save provider and models.');
     } finally {
       setSaving(false);
@@ -183,8 +173,6 @@ export function AddProviderWizard({ onSuccess, onCancel }: AddProviderWizardProp
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
-        
-        {/* Wizard Header */}
         <div className="px-6 py-5 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 flex items-center justify-center font-bold text-sm shadow-sm">
@@ -211,9 +199,7 @@ export function AddProviderWizard({ onSuccess, onCancel }: AddProviderWizardProp
           </button>
         </div>
 
-        {/* Wizard Body */}
         <div className="flex-1 overflow-y-auto p-6">
-          {/* STEP 1: Choose Provider */}
           {step === 1 && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               {PROVIDER_TEMPLATES.map((tmpl) => (
@@ -245,7 +231,6 @@ export function AddProviderWizard({ onSuccess, onCancel }: AddProviderWizardProp
             </div>
           )}
 
-          {/* STEP 2: Paste API Key & Test Connection */}
           {step === 2 && (
             <div className="space-y-5">
               <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-950/50 border border-zinc-200 dark:border-zinc-800 flex items-start gap-3">
@@ -272,7 +257,6 @@ export function AddProviderWizard({ onSuccess, onCancel }: AddProviderWizardProp
                 </div>
               </div>
 
-              {/* Advanced / Custom Base URL (shown for custom or upon expansion) */}
               {!selectedTemplate.isPreset && (
                 <div>
                   <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 uppercase tracking-wider mb-2">
@@ -336,7 +320,6 @@ export function AddProviderWizard({ onSuccess, onCancel }: AddProviderWizardProp
             </div>
           )}
 
-          {/* STEP 3: Auto Discovered Models */}
           {step === 3 && (
             <div className="space-y-4">
               <div className="flex items-center justify-between gap-3">
@@ -421,7 +404,6 @@ export function AddProviderWizard({ onSuccess, onCancel }: AddProviderWizardProp
           )}
         </div>
 
-        {/* Wizard Footer */}
         <div className="px-6 py-4 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between bg-zinc-50/50 dark:bg-zinc-950/50">
           {step > 1 ? (
             <button
@@ -472,7 +454,6 @@ export function AddProviderWizard({ onSuccess, onCancel }: AddProviderWizardProp
             )}
           </div>
         </div>
-
       </div>
     </div>
   );

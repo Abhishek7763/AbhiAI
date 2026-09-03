@@ -1,4 +1,5 @@
 import { AIModel, ChatMessage, ProviderAdapter } from './base';
+import { logger } from '@/lib/logger';
 
 export interface OpenAICompatibleConfig {
   id: string;
@@ -37,7 +38,6 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
       ...this.customHeaders,
     };
 
-    // Specific header requirements for popular providers
     if (this.id === 'openrouter') {
       headers['HTTP-Referer'] = 'https://abhiai.app';
       headers['X-Title'] = 'AbhiAI';
@@ -48,7 +48,6 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
 
   async testConnection(apiKey: string): Promise<boolean> {
     try {
-      // 1. Try listing models first if endpoint exists
       const modelsRes = await fetch(this.modelsEndpoint, {
         method: 'GET',
         headers: this.getHeaders(apiKey),
@@ -59,7 +58,6 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
         return true;
       }
 
-      // 2. If models endpoint returns 404 or fails, test a tiny chat completion ping
       const pingModel = this.knownModels?.[0]?.id || 'gpt-3.5-turbo';
       const chatRes = await fetch(this.chatEndpoint, {
         method: 'POST',
@@ -78,9 +76,9 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
 
       const errText = await chatRes.text();
       throw new Error(`Test failed (${chatRes.status}): ${errText.slice(0, 200)}`);
-    } catch (error: any) {
-      console.error(`[${this.name}] Connection test error:`, error);
-      throw new Error(error.message || 'Connection test failed');
+    } catch (error) {
+      logger.warn(`${this.name} connection test failed.`, error);
+      throw new Error(error instanceof Error ? error.message : 'Connection test failed');
     }
   }
 
@@ -93,7 +91,7 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
       });
 
       if (!res.ok) {
-        console.warn(`[${this.name}] Models discovery returned ${res.status}, falling back to preset catalogue`);
+        logger.warn(`${this.name} model discovery returned HTTP ${res.status}; using preset catalogue.`);
         return this.knownModels || [];
       }
 
@@ -108,7 +106,6 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
         const modelId = m.id || m.name;
         const capabilities: string[] = ['text'];
 
-        // Capability heuristics
         const lower = modelId.toLowerCase();
         if (lower.includes('vision') || lower.includes('vl') || lower.includes('4o') || lower.includes('claude-3') || lower.includes('gemini') || lower.includes('pixtral')) {
           capabilities.push('vision');
@@ -128,7 +125,7 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
         };
       });
     } catch (error) {
-      console.warn(`[${this.name}] Failed to discover models dynamically:`, error);
+      logger.warn(`${this.name} dynamic model discovery failed; using preset catalogue.`, error);
       return this.knownModels || [];
     }
   }
@@ -142,7 +139,6 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
 
     for (const msg of messages) {
       if (msg.attachments && msg.attachments.length > 0) {
-        // Vision format for OpenAI compatible providers
         const contentParts: any[] = [{ type: 'text', text: msg.content }];
         for (const att of msg.attachments) {
           if (att.type.startsWith('image/')) {

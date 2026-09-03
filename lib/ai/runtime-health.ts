@@ -2,6 +2,7 @@ import 'server-only';
 
 import { diagnoseAIError } from '@/lib/ai/error-doctor';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { logger } from '@/lib/logger';
 
 type RuntimeState = {
   cooldownUntil?: string | null;
@@ -78,7 +79,7 @@ export async function listRuntimeRoutingSignals(): Promise<RuntimeRoutingSignal[
     .eq('is_active', true);
 
   if (error) {
-    console.warn('Could not read runtime routing signals:', error.message);
+    logger.warn('Could not read runtime routing signals.', error.message);
     return [];
   }
 
@@ -109,7 +110,7 @@ export async function listCoolingRuntimeModelIds() {
     .eq('is_active', true);
 
   if (error) {
-    console.warn('Could not read runtime model cooldowns:', error.message);
+    logger.warn('Could not read runtime model cooldowns.', error.message);
     return new Set<string>();
   }
 
@@ -155,7 +156,7 @@ export async function recordRuntimeModelSuccess(modelRecordId: string, latencyMs
 
     if (error) throw new Error(error.message);
   } catch (error) {
-    console.warn('Could not persist runtime model success:', error instanceof Error ? error.message : error);
+    logger.warn('Could not persist runtime model success.', error);
   }
 }
 
@@ -188,6 +189,6 @@ export async function recordRuntimeModelFailure(modelRecordId: string, error: un
 
     if (updateError) throw new Error(updateError.message);
   } catch (persistError) {
-    console.warn('Could not persist runtime model failure:', persistError instanceof Error ? persistError.message : persistError);
+    logger.warn('Could not persist runtime model failure.', persistError);
   }
 }

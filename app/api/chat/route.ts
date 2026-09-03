@@ -6,6 +6,7 @@ import { logUsageEvent } from "@/lib/usage-logger";
 import { recordRuntimeModelFailure, recordRuntimeModelSuccess } from "@/lib/ai/runtime-health";
 import { withTimeout } from "@/lib/ai/timeout";
 import { sanitizeChatHistory, validateChatRequestSize, validateUserMessage } from "@/lib/ai/chat-input";
+import { logger } from "@/lib/logger";
 import {
   formatDocumentsForPrompt,
   isGeminiNativeAttachment,
@@ -122,7 +123,9 @@ export async function POST(req: Request) {
             recordRuntimeModelSuccess(candidate.connectionId, Date.now() - candidateStartedAt),
             RUNTIME_HEALTH_WRITE_TIMEOUT_MS,
             'Runtime health update',
-          ).catch(() => undefined);
+          ).catch((healthError) => {
+            logger.warn('Could not record successful runtime health state.', healthError);
+          });
           successfulReply = reply;
           executedCandidate = candidate;
           break;
@@ -134,10 +137,12 @@ export async function POST(req: Request) {
           recordRuntimeModelFailure(candidate.connectionId, error),
           RUNTIME_HEALTH_WRITE_TIMEOUT_MS,
           'Runtime health update',
-        ).catch(() => undefined);
+        ).catch((healthError) => {
+          logger.warn('Could not record failed runtime health state.', healthError);
+        });
 
         const message = error instanceof Error ? error.message : String(error || 'Unknown provider error');
-        console.warn(`[Failover] Execution failed on ${candidate.name} (${candidate.modelId}):`, message);
+        logger.warn(`Failover execution failed on ${candidate.name} (${candidate.modelId}).`, message);
       }
     }
 
@@ -189,7 +194,7 @@ export async function POST(req: Request) {
       return new Response(null, { status: 499 });
     }
 
-    console.error("Chat Gateway Error:", error);
+    logger.error('Chat gateway error.', error);
     return NextResponse.json(
       { error: "Internal Server Error in AbhiAI Chat Gateway" },
       { status: 500 },

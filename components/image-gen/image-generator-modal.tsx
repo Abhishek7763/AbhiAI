@@ -12,13 +12,12 @@ import {
   RefreshCw, 
   Wand2, 
   Layers, 
-  Sliders, 
   Send, 
   Clock, 
   AlertCircle,
-  ExternalLink,
   ChevronRight
 } from 'lucide-react';
+import { logger } from '@/lib/logger';
 
 export interface GeneratedImageItem {
   id: string;
@@ -88,23 +87,25 @@ export function ImageGeneratorModal({
   const [engine, setEngine] = useState('auto');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [storageWarning, setStorageWarning] = useState<string | null>(null);
   const [currentImage, setCurrentImage] = useState<GeneratedImageItem | null>(null);
-  const [gallery, setGallery] = useState<GeneratedImageItem[]>(() => {
-    if (typeof window === 'undefined') return [];
-    try {
-      const saved = localStorage.getItem('abhi_ai_generated_images');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch (_) {}
-    return [];
-  });
+  const [gallery, setGallery] = useState<GeneratedImageItem[]>([]);
   const [activeTab, setActiveTab] = useState<'create' | 'gallery'>('create');
   const [copied, setCopied] = useState(false);
   const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
 
-  // Sync initialPrompt changes if passed afresh
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('abhi_ai_generated_images');
+      if (!saved) return;
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) setGallery(parsed);
+    } catch (storageError) {
+      logger.warn('Could not load the image gallery from browser storage.', storageError);
+      setStorageWarning('Your saved image gallery could not be loaded. New images will still work in this session.');
+    }
+  }, []);
+
   if (initialPrompt && initialPrompt !== prevInitialPrompt) {
     setPrevInitialPrompt(initialPrompt);
     setPrompt(initialPrompt);
@@ -116,7 +117,22 @@ export function ImageGeneratorModal({
     setGallery(updated);
     try {
       localStorage.setItem('abhi_ai_generated_images', JSON.stringify(updated));
-    } catch (_) {}
+      setStorageWarning(null);
+    } catch (storageError) {
+      logger.warn('Could not save the generated image gallery to browser storage.', storageError);
+      setStorageWarning('This image is available now, but your browser could not save it to the local gallery.');
+    }
+  };
+
+  const clearGallery = () => {
+    setGallery([]);
+    try {
+      localStorage.removeItem('abhi_ai_generated_images');
+      setStorageWarning(null);
+    } catch (storageError) {
+      logger.warn('Could not clear the image gallery from browser storage.', storageError);
+      setStorageWarning('The gallery was cleared for this session, but browser storage could not be updated.');
+    }
   };
 
   const handleGenerate = async (e?: React.FormEvent) => {
@@ -156,8 +172,9 @@ export function ImageGeneratorModal({
 
       setCurrentImage(newItem);
       saveToGallery(newItem);
-    } catch (err: any) {
-      setError(err?.message || 'Error generating image. Please try another prompt or provider.');
+    } catch (generationError) {
+      logger.warn('Image generation request failed.', generationError);
+      setError(generationError instanceof Error ? generationError.message : 'Error generating image. Please try another prompt or provider.');
     } finally {
       setLoading(false);
     }
@@ -168,10 +185,16 @@ export function ImageGeneratorModal({
     setPrompt(random);
   };
 
-  const handleCopyPrompt = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopyPrompt = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (clipboardError) {
+      logger.warn('Could not copy an image prompt to the clipboard.', clipboardError);
+      setCopied(false);
+      setError('Could not copy the prompt. Please select and copy it manually.');
+    }
   };
 
   const handleDownload = (url: string, filenamePrompt: string) => {
@@ -188,10 +211,7 @@ export function ImageGeneratorModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/60 backdrop-blur-md animate-fadeIn">
-      {/* Modal Card */}
       <div className="relative w-full max-w-4xl max-h-[92vh] flex flex-col bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border border-zinc-200/80 dark:border-zinc-800/80 rounded-3xl shadow-2xl overflow-hidden text-zinc-900 dark:text-zinc-100">
-        
-        {/* Header */}
         <div className="px-5 py-4 border-b border-zinc-200/70 dark:border-zinc-800/70 flex items-center justify-between bg-zinc-50/50 dark:bg-zinc-950/40">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-blue-500 flex items-center justify-center text-white shadow-sm">
@@ -211,7 +231,6 @@ export function ImageGeneratorModal({
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Tab switch */}
             <div className="flex items-center bg-zinc-200/60 dark:bg-zinc-800/60 p-0.5 rounded-xl text-xs font-medium">
               <button
                 onClick={() => setActiveTab('create')}
@@ -249,15 +268,17 @@ export function ImageGeneratorModal({
           </div>
         </div>
 
-        {/* Content Body */}
         <div className="flex-1 overflow-y-auto p-5 space-y-6">
+          {storageWarning && (
+            <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 rounded-xl text-xs text-amber-800 dark:text-amber-300 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-500" />
+              <span>{storageWarning}</span>
+            </div>
+          )}
+
           {activeTab === 'create' ? (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              
-              {/* Controls Column (Left) */}
               <div className="lg:col-span-7 space-y-4">
-                
-                {/* Prompt Input Form */}
                 <form onSubmit={handleGenerate} className="space-y-3">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 flex items-center gap-1.5">
@@ -284,7 +305,6 @@ export function ImageGeneratorModal({
                     />
                   </div>
 
-                  {/* Style Presets */}
                   <div>
                     <label className="text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-2 block flex items-center gap-1.5">
                       <Layers className="w-3.5 h-3.5 text-purple-500" />
@@ -312,7 +332,6 @@ export function ImageGeneratorModal({
                     </div>
                   </div>
 
-                  {/* Aspect Ratio & Engine */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                     <div>
                       <label className="text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-1.5 block">
@@ -363,7 +382,6 @@ export function ImageGeneratorModal({
                     </div>
                   )}
 
-                  {/* Submit Generate Button */}
                   <button
                     type="submit"
                     disabled={loading || !prompt.trim()}
@@ -388,7 +406,6 @@ export function ImageGeneratorModal({
                 </div>
               </div>
 
-              {/* Preview Column (Right) */}
               <div className="lg:col-span-5 flex flex-col">
                 <label className="text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-2 block">
                   Canvas Preview
@@ -429,7 +446,6 @@ export function ImageGeneratorModal({
                         </button>
                       </div>
 
-                      {/* Info & Action Bar */}
                       <div className="p-3 bg-white dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-800 space-y-2">
                         <div className="flex items-center justify-between text-xs">
                           <span className="font-semibold text-zinc-700 dark:text-zinc-300 truncate max-w-[200px]">
@@ -450,7 +466,7 @@ export function ImageGeneratorModal({
                           </button>
 
                           <button
-                            onClick={() => handleCopyPrompt(currentImage.prompt)}
+                            onClick={() => void handleCopyPrompt(currentImage.prompt)}
                             className="p-1.5 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
                             title="Copy Prompt"
                           >
@@ -486,10 +502,8 @@ export function ImageGeneratorModal({
                   )}
                 </div>
               </div>
-
             </div>
           ) : (
-            /* Gallery Tab */
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 flex items-center gap-1.5">
@@ -499,10 +513,7 @@ export function ImageGeneratorModal({
                 {gallery.length > 0 && (
                   <button
                     onClick={() => {
-                      if (confirm('Clear image generation history?')) {
-                        setGallery([]);
-                        localStorage.removeItem('abhi_ai_generated_images');
-                      }
+                      if (confirm('Clear image generation history?')) clearGallery();
                     }}
                     className="text-xs text-red-500 hover:underline"
                   >
@@ -593,7 +604,6 @@ export function ImageGeneratorModal({
         </div>
       </div>
 
-      {/* Fullscreen Lightbox */}
       {fullscreenImage && (
         <div 
           className="fixed inset-0 z-60 bg-black/90 backdrop-blur-md flex items-center justify-center p-4"

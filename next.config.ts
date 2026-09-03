@@ -1,4 +1,6 @@
 import type {NextConfig} from 'next';
+import { withSentryConfig } from '@sentry/nextjs';
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   productionBrowserSourceMaps: false,
@@ -12,7 +14,7 @@ const nextConfig: NextConfig = {
         protocol: 'https',
         hostname: 'picsum.photos',
         port: '',
-        pathname: '/**', 
+        pathname: '/**',
       },
     ],
   },
@@ -26,4 +28,7 @@ const nextConfig: NextConfig = {
     return config;
   },
 };
-export default nextConfig;
+
+export default withSentryConfig(nextConfig, {
+  silent: true,
+});
