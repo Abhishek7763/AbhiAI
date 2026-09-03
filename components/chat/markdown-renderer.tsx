@@ -6,6 +6,7 @@ import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/cjs/styles/prism';
 import { Check, Copy, Eye, Code as CodeIcon, RefreshCw } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface MarkdownRendererProps {
   content: string;
@@ -119,9 +120,11 @@ const CodeBlock = ({ language, value }: { language: string; value: string }) => 
     try {
       await navigator.clipboard.writeText(value);
       setIsCopied(true);
+      toast.success('Code copied to clipboard');
       setTimeout(() => setIsCopied(false), 1800);
     } catch {
       setIsCopied(false);
+      toast.error('Could not copy code. Please copy it manually.');
     }
   };
 

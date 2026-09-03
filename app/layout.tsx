@@ -1,14 +1,24 @@
 import type { Metadata } from 'next';
+import { Geist } from 'next/font/google';
 import './globals.css';
 import './mobile-chat-polish.css';
+import './phase4-polish.css';
 import { AppStructureFlowBackground } from '@/components/effects/structure-flow-background';
 import { ServiceWorkerRegistration } from '@/components/pwa/service-worker-registration';
 import { PublicAiTurnstile } from '@/components/security/public-ai-turnstile';
+import { Toaster } from '@/components/ui/toaster';
+
+const geist = Geist({
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--font-abhiai-sans',
+});
 
 const publicImageStudioEnabled = process.env.NEXT_PUBLIC_ENABLE_PUBLIC_IMAGE_STUDIO === 'true';
 const liveVoiceEnabled = process.env.NEXT_PUBLIC_ENABLE_LIVE_VOICE === 'true';
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://abhiai.vercel.app'),
   title: 'AbhiAI',
   description: 'A modern, premium, mobile-first AI platform.',
   icons: {
@@ -31,7 +41,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="antialiased" suppressHydrationWarning>
+    <html lang="en" className={`${geist.variable} antialiased`} suppressHydrationWarning>
       <head>
         <script
           dangerouslySetInnerHTML={{
@@ -62,7 +72,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         )}
       </head>
       <body
-        className="bg-white text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50 selection:bg-zinc-200 dark:selection:bg-zinc-800 transition-colors duration-200 relative min-h-screen"
+        className={`${geist.className} bg-white text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50 selection:bg-zinc-200 dark:selection:bg-zinc-800 transition-colors duration-200 relative min-h-screen`}
         data-public-image-studio={publicImageStudioEnabled ? 'true' : 'false'}
         data-live-voice={liveVoiceEnabled ? 'true' : 'false'}
         suppressHydrationWarning
@@ -71,6 +81,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <div className="relative z-10 min-h-screen">
           {children}
         </div>
+        <Toaster />
         <PublicAiTurnstile />
         <ServiceWorkerRegistration />
       </body>

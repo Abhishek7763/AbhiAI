@@ -3,8 +3,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { User } from '@supabase/supabase-js';
-import { Cloud, LogIn, LogOut, Settings, UserRound } from 'lucide-react';
+import { Cloud, LogIn, LogOut, Settings } from 'lucide-react';
+import { toast } from 'sonner';
 import { createClient } from '@/lib/supabase/client';
+import { Avatar } from '@/components/ui/avatar';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export function AccountMenu() {
   const [supabase] = useState(() => createClient());
@@ -49,22 +52,21 @@ export function AccountMenu() {
     if (signingOut) return;
     setSigningOut(true);
     try {
-      await supabase.auth.signOut();
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
       setOpen(false);
+      toast.success('Signed out of AbhiAI');
       router.push('/');
       router.refresh();
+    } catch (signOutError) {
+      toast.error(signOutError instanceof Error ? signOutError.message : 'Could not sign out. Please try again.');
     } finally {
       setSigningOut(false);
     }
   };
 
   if (loading) {
-    return (
-      <div
-        className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-100/80 dark:bg-zinc-900/80 animate-pulse"
-        aria-label="Loading account"
-      />
-    );
+    return <Skeleton className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl" aria-label="Loading account" />;
   }
 
   if (!user) {
@@ -87,6 +89,7 @@ export function AccountMenu() {
     user.email ||
     'AbhiAI User';
   const initial = name.trim().charAt(0).toUpperCase() || 'A';
+  const avatarUrl = typeof user.user_metadata?.avatar_url === 'string' ? user.user_metadata.avatar_url : null;
 
   return (
     <div ref={rootRef} className="relative">
@@ -95,22 +98,20 @@ export function AccountMenu() {
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
         aria-haspopup="menu"
-        className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 text-xs font-bold flex items-center justify-center shadow-xs hover:scale-[1.03] transition-transform"
+        className="rounded-xl shadow-xs hover:scale-[1.03] active:scale-[0.98] transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/35"
         title={user.email || 'AbhiAI account'}
       >
-        {initial}
+        <Avatar src={avatarUrl} alt={name} fallback={initial} className="w-8 h-8 sm:w-9 sm:h-9 border border-zinc-200 dark:border-zinc-800" />
       </button>
 
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-11 w-64 overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white/98 dark:bg-zinc-900/98 shadow-2xl backdrop-blur-xl z-50"
+          className="abhiai-dropdown-surface absolute right-0 top-11 w-64 overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white/98 dark:bg-zinc-900/98 shadow-2xl backdrop-blur-xl z-50"
         >
           <div className="p-3.5 border-b border-zinc-200/70 dark:border-zinc-800/70">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-9 h-9 shrink-0 rounded-xl bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 flex items-center justify-center font-bold text-sm">
-                {initial}
-              </div>
+              <Avatar src={avatarUrl} alt={name} fallback={initial} className="w-9 h-9" />
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">{name}</p>
                 <p className="text-[11px] text-zinc-500 dark:text-zinc-400 truncate">{user.email}</p>

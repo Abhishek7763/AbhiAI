@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { Cloud, Image as ImageIcon, Loader2, Settings, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { createClient } from '@/lib/supabase/client';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface AccountIdentity {
   id: string;
@@ -19,6 +21,20 @@ interface GeneratedImageRow {
   storage_path: string | null;
   created_at: string;
   displayUrl?: string;
+}
+
+function ImageGallerySkeleton() {
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3.5" aria-label="Loading My Images">
+      {Array.from({ length: 8 }).map((_, index) => (
+        <div key={index} className="rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 p-2.5 space-y-2.5">
+          <Skeleton className="aspect-square w-full rounded-xl" />
+          <Skeleton className="h-3.5 w-5/6 rounded-md" />
+          <Skeleton className="h-3 w-2/5 rounded-md" />
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export function AccountDashboard({ identity }: { identity: AccountIdentity }) {
@@ -44,8 +60,10 @@ export function AccountDashboard({ identity }: { identity: AccountIdentity }) {
 
       if (!active) return;
       if (error) {
-        setImagesError('Could not load your cloud image history.');
+        const message = 'Could not load your cloud image history.';
+        setImagesError(message);
         setImagesLoading(false);
+        toast.error(message);
         return;
       }
 
@@ -61,7 +79,9 @@ export function AccountDashboard({ identity }: { identity: AccountIdentity }) {
 
         if (!active) return;
         if (signedError) {
-          setImagesError('Some saved images could not be opened right now.');
+          const message = 'Some saved images could not be opened right now.';
+          setImagesError(message);
+          toast.warning(message);
         } else {
           for (const signed of signedData ?? []) {
             if (signed.path && signed.signedUrl) signedByPath.set(signed.path, signed.signedUrl);
@@ -103,23 +123,28 @@ export function AccountDashboard({ identity }: { identity: AccountIdentity }) {
         .eq('id', image.id);
       if (error) throw error;
       setImages((previous) => previous.filter((item) => item.id !== image.id));
+      toast.success('Image removed from My Images');
     } catch {
-      setImagesError('Could not delete this image. Please try again.');
+      const message = 'Could not delete this image. Please try again.';
+      setImagesError(message);
+      toast.error(message);
     } finally {
       setDeletingId(null);
     }
   };
 
   return (
-    <div className="w-full max-w-5xl mx-auto rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white/95 dark:bg-zinc-900/95 shadow-xl overflow-hidden">
+    <div className="w-full max-w-5xl mx-auto rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white/95 dark:bg-zinc-900/95 shadow-xl overflow-hidden backdrop-blur-sm">
       <div className="p-5 sm:p-6 border-b border-zinc-200 dark:border-zinc-800">
         <h1 className="text-xl sm:text-2xl font-bold text-zinc-900 dark:text-zinc-100">Your AbhiAI account</h1>
         <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Manage cloud sync and access images generated while signed in.</p>
       </div>
 
-      <div className="p-2 border-b border-zinc-200 dark:border-zinc-800 flex gap-1 bg-zinc-50/70 dark:bg-zinc-950/40">
+      <div className="p-2 border-b border-zinc-200 dark:border-zinc-800 flex gap-1 bg-zinc-50/70 dark:bg-zinc-950/40" role="tablist" aria-label="Account sections">
         <button
           type="button"
+          role="tab"
+          aria-selected={activeTab === 'settings'}
           onClick={() => setActiveTab('settings')}
           className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium transition-colors ${activeTab === 'settings' ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-xs' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}`}
         >
@@ -128,6 +153,8 @@ export function AccountDashboard({ identity }: { identity: AccountIdentity }) {
         </button>
         <button
           type="button"
+          role="tab"
+          aria-selected={activeTab === 'images'}
           onClick={() => setActiveTab('images')}
           className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium transition-colors ${activeTab === 'images' ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-xs' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}`}
         >
@@ -158,28 +185,27 @@ export function AccountDashboard({ identity }: { identity: AccountIdentity }) {
             </div>
           </div>
         ) : imagesLoading ? (
-          <div className="h-64 flex items-center justify-center gap-2 text-sm text-zinc-500">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            Loading My Images…
-          </div>
+          <ImageGallerySkeleton />
         ) : (
           <div className="space-y-4">
             {imagesError && (
-              <div className="rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/30 px-3 py-2.5 text-sm text-amber-800 dark:text-amber-300">
+              <div role="alert" className="rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/30 px-3 py-2.5 text-sm text-amber-800 dark:text-amber-300">
                 {imagesError}
               </div>
             )}
 
             {images.length === 0 ? (
-              <div className="py-16 text-center text-zinc-400">
-                <ImageIcon className="w-10 h-10 mx-auto mb-3 opacity-60" />
-                <p className="text-sm font-medium text-zinc-600 dark:text-zinc-300">No cloud images yet</p>
+              <div className="py-16 text-center text-zinc-400 rounded-2xl border border-dashed border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-950/20">
+                <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-zinc-100 dark:bg-zinc-800/70 flex items-center justify-center">
+                  <ImageIcon className="w-7 h-7 opacity-70" />
+                </div>
+                <p className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">No cloud images yet</p>
                 <p className="mt-1 text-xs">Generate an image while signed in and it will appear here.</p>
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3.5">
                 {images.map((image) => (
-                  <article key={image.id} className="rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 shadow-xs">
+                  <article key={image.id} className="rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 shadow-xs transition-[transform,box-shadow] hover:-translate-y-0.5 hover:shadow-md">
                     <div className="aspect-square bg-zinc-100 dark:bg-zinc-900 overflow-hidden">
                       {image.displayUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
@@ -198,6 +224,7 @@ export function AccountDashboard({ identity }: { identity: AccountIdentity }) {
                           disabled={deletingId === image.id}
                           className="p-1.5 rounded-lg text-zinc-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors disabled:opacity-50"
                           title="Delete image"
+                          aria-label={`Delete image: ${image.prompt}`}
                         >
                           {deletingId === image.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
                         </button>

@@ -1,0 +1,108 @@
+/* Phase 4 production polish: shared interaction, accessibility and mobile refinements.
+   Kept as a low-risk override layer so the established chat layout remains intact. */
+
+:root {
+  --abhiai-focus: rgb(59 130 246 / 0.42);
+}
+
+::selection {
+  background: rgb(191 219 254 / 0.72);
+}
+
+.dark ::selection {
+  background: rgb(30 64 175 / 0.48);
+}
+
+:where(button, a, input, textarea, select, summary):focus-visible {
+  outline: 2px solid var(--abhiai-focus);
+  outline-offset: 2px;
+}
+
+:where(button, [role='button']):not(:disabled) {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.abhiai-dialog-surface,
+.abhiai-dropdown-surface {
+  animation: abhiai-surface-in 160ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes abhiai-surface-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Keep scrollbars quiet but discoverable on desktop. */
+@media (min-width: 768px) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(161 161 170 / 0.55) transparent;
+  }
+}
+
+@media (max-width: 767px) {
+  :root {
+    --abhiai-mobile-safe-top: env(safe-area-inset-top, 0px);
+    --abhiai-mobile-topbar-h: calc(3.55rem + var(--abhiai-mobile-safe-top));
+  }
+
+  .abhiai-mobile-topbar {
+    height: var(--abhiai-mobile-topbar-h) !important;
+    padding-top: var(--abhiai-mobile-safe-top) !important;
+  }
+
+  .abhiai-mobile-menu-btn,
+  .abhiai-mobile-topbar-spacer {
+    min-width: 2.5rem;
+    min-height: 2.5rem;
+  }
+
+  .chat-composer-shell {
+    padding-left: max(0.55rem, env(safe-area-inset-left)) !important;
+    padding-right: max(0.55rem, env(safe-area-inset-right)) !important;
+  }
+
+  .chat-composer-shell form > div:last-child > button {
+    width: 2.5rem !important;
+    height: 2.5rem !important;
+  }
+
+  .chat-composer-shell textarea {
+    font-size: 16px !important; /* prevents iOS focus zoom */
+    line-height: 1.35rem !important;
+  }
+
+  .abhiai-mobile-model-dock [data-abhiai-model-selector='dock'] > button {
+    min-height: 2rem !important;
+  }
+
+  /* Bottom-sheet behavior makes dialogs reachable with one hand and avoids clipped content. */
+  .abhiai-dialog-surface {
+    max-height: min(88dvh, 760px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  /* Give dense chat controls a reliable touch target without visually inflating icons. */
+  .abhiai-markdown button,
+  [role='menuitem'] {
+    min-height: 2.5rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

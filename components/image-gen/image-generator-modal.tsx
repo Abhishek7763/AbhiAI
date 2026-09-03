@@ -17,7 +17,9 @@ import {
   AlertCircle,
   ChevronRight
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { logger } from '@/lib/logger';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export interface GeneratedImageItem {
   id: string;
@@ -102,7 +104,9 @@ export function ImageGeneratorModal({
       if (Array.isArray(parsed)) setGallery(parsed);
     } catch (storageError) {
       logger.warn('Could not load the image gallery from browser storage.', storageError);
-      setStorageWarning('Your saved image gallery could not be loaded. New images will still work in this session.');
+      const message = 'Your saved image gallery could not be loaded. New images will still work in this session.';
+      setStorageWarning(message);
+      toast.warning(message);
     }
   }, []);
 
@@ -120,7 +124,9 @@ export function ImageGeneratorModal({
       setStorageWarning(null);
     } catch (storageError) {
       logger.warn('Could not save the generated image gallery to browser storage.', storageError);
-      setStorageWarning('This image is available now, but your browser could not save it to the local gallery.');
+      const message = 'This image is available now, but your browser could not save it to the local gallery.';
+      setStorageWarning(message);
+      toast.warning(message);
     }
   };
 
@@ -129,9 +135,12 @@ export function ImageGeneratorModal({
     try {
       localStorage.removeItem('abhi_ai_generated_images');
       setStorageWarning(null);
+      toast.success('Local image history cleared');
     } catch (storageError) {
       logger.warn('Could not clear the image gallery from browser storage.', storageError);
-      setStorageWarning('The gallery was cleared for this session, but browser storage could not be updated.');
+      const message = 'The gallery was cleared for this session, but browser storage could not be updated.';
+      setStorageWarning(message);
+      toast.warning(message);
     }
   };
 
@@ -172,9 +181,14 @@ export function ImageGeneratorModal({
 
       setCurrentImage(newItem);
       saveToGallery(newItem);
+      toast.success('Image generated successfully', {
+        description: `${newItem.provider} • ${newItem.aspectRatio}`,
+      });
     } catch (generationError) {
       logger.warn('Image generation request failed.', generationError);
-      setError(generationError instanceof Error ? generationError.message : 'Error generating image. Please try another prompt or provider.');
+      const message = generationError instanceof Error ? generationError.message : 'Error generating image. Please try another prompt or provider.';
+      setError(message);
+      toast.error('Image generation failed', { description: message });
     } finally {
       setLoading(false);
     }
@@ -189,11 +203,14 @@ export function ImageGeneratorModal({
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
+      toast.success('Prompt copied to clipboard');
       setTimeout(() => setCopied(false), 2000);
     } catch (clipboardError) {
       logger.warn('Could not copy an image prompt to the clipboard.', clipboardError);
       setCopied(false);
-      setError('Could not copy the prompt. Please select and copy it manually.');
+      const message = 'Could not copy the prompt. Please select and copy it manually.';
+      setError(message);
+      toast.error(message);
     }
   };
 
@@ -211,7 +228,12 @@ export function ImageGeneratorModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/60 backdrop-blur-md animate-fadeIn">
-      <div className="relative w-full max-w-4xl max-h-[92vh] flex flex-col bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border border-zinc-200/80 dark:border-zinc-800/80 rounded-3xl shadow-2xl overflow-hidden text-zinc-900 dark:text-zinc-100">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="AbhiAI Image Studio"
+        className="abhiai-dialog-surface relative w-full max-w-4xl max-h-[92vh] flex flex-col bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border border-zinc-200/80 dark:border-zinc-800/80 rounded-3xl shadow-2xl overflow-hidden text-zinc-900 dark:text-zinc-100"
+      >
         <div className="px-5 py-4 border-b border-zinc-200/70 dark:border-zinc-800/70 flex items-center justify-between bg-zinc-50/50 dark:bg-zinc-950/40">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-blue-500 flex items-center justify-center text-white shadow-sm">
@@ -262,6 +284,7 @@ export function ImageGeneratorModal({
             <button
               onClick={onClose}
               className="p-2 rounded-xl text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+              aria-label="Close Image Studio"
             >
               <X className="w-5 h-5" />
             </button>
@@ -376,7 +399,7 @@ export function ImageGeneratorModal({
                   </div>
 
                   {error && (
-                    <div className="p-3 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 rounded-xl text-xs text-red-700 dark:text-red-300 flex items-start gap-2">
+                    <div role="alert" className="p-3 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 rounded-xl text-xs text-red-700 dark:text-red-300 flex items-start gap-2">
                       <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-500" />
                       <span>{error}</span>
                     </div>
@@ -413,19 +436,13 @@ export function ImageGeneratorModal({
 
                 <div className="flex-1 min-h-[320px] bg-zinc-100 dark:bg-zinc-950/80 border border-zinc-200 dark:border-zinc-800 rounded-2xl flex flex-col items-center justify-center relative overflow-hidden group">
                   {loading ? (
-                    <div className="flex flex-col items-center p-6 text-center space-y-3">
-                      <div className="relative">
-                        <div className="w-14 h-14 rounded-full border-4 border-blue-500/20 border-t-blue-500 animate-spin" />
-                        <Sparkles className="w-6 h-6 text-blue-500 absolute inset-0 m-auto animate-pulse" />
+                    <div className="w-full p-4 sm:p-5 space-y-3" aria-label="Generating image">
+                      <Skeleton className="w-full aspect-square max-h-[310px] rounded-2xl" />
+                      <div className="space-y-2 px-1">
+                        <Skeleton className="h-3.5 w-2/3 rounded-md" />
+                        <Skeleton className="h-3 w-1/2 rounded-md" />
                       </div>
-                      <div>
-                        <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
-                          Creating your masterpiece...
-                        </p>
-                        <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-                          Applying {style} style & high-definition rendering
-                        </p>
-                      </div>
+                      <p className="text-xs text-center text-zinc-500 dark:text-zinc-400">Creating your {style} artwork…</p>
                     </div>
                   ) : currentImage ? (
                     <div className="relative w-full h-full flex flex-col">
@@ -494,9 +511,9 @@ export function ImageGeneratorModal({
                       <div className="w-12 h-12 rounded-2xl bg-zinc-200/60 dark:bg-zinc-800/60 flex items-center justify-center">
                         <ImageIcon className="w-6 h-6 text-zinc-400" />
                       </div>
-                      <p className="text-xs">No artwork generated yet.</p>
-                      <p className="text-[11px] text-zinc-500 max-w-[200px]">
-                        Type your prompt and click Generate to see live results here!
+                      <p className="text-xs font-medium text-zinc-600 dark:text-zinc-300">No artwork generated yet</p>
+                      <p className="text-[11px] text-zinc-500 max-w-[220px]">
+                        Describe an idea above and AbhiAI will build the preview here.
                       </p>
                     </div>
                   )}
@@ -523,11 +540,13 @@ export function ImageGeneratorModal({
               </div>
 
               {gallery.length === 0 ? (
-                <div className="py-16 text-center text-zinc-400 space-y-2">
-                  <ImageIcon className="w-10 h-10 mx-auto text-zinc-400/60" />
-                  <p className="text-sm font-medium">Your gallery is empty</p>
+                <div className="py-16 text-center text-zinc-400 space-y-2 rounded-2xl border border-dashed border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-950/20">
+                  <div className="w-14 h-14 mx-auto rounded-2xl bg-zinc-100 dark:bg-zinc-800/70 flex items-center justify-center">
+                    <ImageIcon className="w-7 h-7 text-zinc-400/70" />
+                  </div>
+                  <p className="text-sm font-medium text-zinc-600 dark:text-zinc-300">Your gallery is empty</p>
                   <p className="text-xs text-zinc-500">
-                    Switch to Create tab to generate your first AI image!
+                    Switch to Create to generate your first AI image.
                   </p>
                 </div>
               ) : (
@@ -608,10 +627,14 @@ export function ImageGeneratorModal({
         <div 
           className="fixed inset-0 z-60 bg-black/90 backdrop-blur-md flex items-center justify-center p-4"
           onClick={() => setFullscreenImage(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Fullscreen generated image"
         >
           <button
             onClick={() => setFullscreenImage(null)}
             className="absolute top-4 right-4 p-2.5 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
+            aria-label="Close fullscreen image"
           >
             <X className="w-6 h-6" />
           </button>
