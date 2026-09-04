@@ -1,6 +1,7 @@
 import type { AppSettings } from '@/lib/app-settings';
 import { generateImageWithConfiguredProviders, ImageGenerationInputError } from '@/lib/ai/image-generation-service';
 import { fetchWebGroundingContext } from '@/lib/ai/web-search';
+import { getStoredSettings } from '@/lib/data/admin-config';
 import { extractDocumentText, isImageAttachment, type AttachmentPayload } from '@/lib/files/document-extractor';
 
 export type AgentToolName = 'web_search' | 'document_qa' | 'image_generation';
@@ -135,11 +136,7 @@ function buildDocumentAnswerContext(query: string, attachments: AttachmentPayloa
 
 export function getAvailableAgentTools(context: AgentToolContext): AgentToolDefinition[] {
   const hasDocuments = (context.attachments ?? []).some((attachment) => !isImageAttachment(attachment));
-  return AGENT_TOOL_DEFINITIONS.filter((tool) => {
-    if (tool.name === 'document_qa' && !hasDocuments) return false;
-    if (tool.name === 'image_generation' && !context.imageSettings) return false;
-    return true;
-  });
+  return AGENT_TOOL_DEFINITIONS.filter((tool) => tool.name !== 'document_qa' || hasDocuments);
 }
 
 export async function executeAgentTool(
@@ -148,22 +145,19 @@ export async function executeAgentTool(
   context: AgentToolContext,
 ): Promise<AgentToolResult> {
   if (name === 'image_generation') {
-    if (!context.imageSettings) {
-      return { ok: false, error: 'Image generation is not configured for this request.' };
-    }
-
     const prompt = typeof args?.prompt === 'string' ? args.prompt.trim() : '';
     const style = typeof args?.style === 'string' ? args.style : 'photorealistic';
     const aspectRatio = typeof args?.aspect_ratio === 'string' ? args.aspect_ratio : '1:1';
 
     try {
+      const settings = context.imageSettings ?? await getStoredSettings();
       const result = await generateImageWithConfiguredProviders({
         prompt,
         style,
         aspectRatio,
         engine: 'auto',
         userId: context.userId ?? null,
-        settings: context.imageSettings,
+        settings,
       });
 
       return {
