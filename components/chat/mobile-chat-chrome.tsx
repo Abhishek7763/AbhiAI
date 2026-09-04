@@ -21,9 +21,29 @@ import { ThemeToggle } from '@/components/ui/theme-toggle';
 
 type MobileAction = 'agent' | 'image' | 'export' | 'voice';
 
+function isImageGenerationIntent(value: string) {
+  const text = value.trim().toLowerCase();
+  if (!text) return false;
+
+  const visualNoun = /(image|photo|picture|illustration|artwork|poster|wallpaper|logo|tasveer|tasvir|चित्र|तस्वीर|फोटो|इमेज)/i;
+  const createVerb = /(generate|create|make|draw|design|render|banao|bana do|banado|banaao|बनाओ|बना दो|बनादो|बनाइए|बनाना)/i;
+
+  return visualNoun.test(text) && createVerb.test(text);
+}
+
+function findImageStudioTrigger() {
+  return Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
+    button.title === 'Open AI Image Studio' ||
+    button.title === 'Image Studio' ||
+    button.title === 'Generate AI Image from prompt',
+  );
+}
+
 export default function MobileChatChrome() {
   const [moreOpen, setMoreOpen] = useState(false);
-  const imageStudioEnabled = process.env.NEXT_PUBLIC_ENABLE_PUBLIC_IMAGE_STUDIO === 'true';
+  // Phase 6 promotes Image Studio to a public first-class feature. Do not hide
+  // mobile access behind the older rollout flag anymore.
+  const imageStudioEnabled = true;
   const liveVoiceEnabled = process.env.NEXT_PUBLIC_ENABLE_LIVE_VOICE === 'true';
 
   useEffect(() => {
@@ -34,6 +54,29 @@ export default function MobileChatChrome() {
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
   }, [moreOpen]);
+
+  useEffect(() => {
+    const handleChatSubmit = (event: SubmitEvent) => {
+      const form = event.target;
+      if (!(form instanceof HTMLFormElement)) return;
+
+      const textarea = form.querySelector<HTMLTextAreaElement>('textarea');
+      if (!textarea || !isImageGenerationIntent(textarea.value)) return;
+
+      const fileInput = form.querySelector<HTMLInputElement>('input[type="file"]');
+      if (fileInput?.files?.length) return;
+
+      const imageTrigger = findImageStudioTrigger();
+      if (!imageTrigger || imageTrigger.disabled) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      window.requestAnimationFrame(() => imageTrigger.click());
+    };
+
+    document.addEventListener('submit', handleChatSubmit, true);
+    return () => document.removeEventListener('submit', handleChatSubmit, true);
+  }, []);
 
   const openSidebar = () => {
     const trigger = document.querySelector<HTMLButtonElement>('button[aria-label="Open Navigation"]');
@@ -48,7 +91,7 @@ export default function MobileChatChrome() {
       },
       image: {
         title: 'Open AI Image Studio',
-        fallback: 'Image Studio is currently disabled.',
+        fallback: 'Image Studio is currently unavailable.',
       },
       export: {
         title: 'Export & Share Chat',
@@ -60,18 +103,16 @@ export default function MobileChatChrome() {
       },
     };
 
-    if (action === 'image' && !imageStudioEnabled) {
-      toast.info(definitions.image.fallback);
-      return;
-    }
     if (action === 'voice' && !liveVoiceEnabled) {
       toast.info(definitions.voice.fallback);
       return;
     }
 
-    const target = Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find(
-      (button) => button.title === definitions[action].title,
-    );
+    const target = action === 'image'
+      ? findImageStudioTrigger()
+      : Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find(
+          (button) => button.title === definitions[action].title,
+        );
 
     if (!target || target.disabled) {
       toast.info(definitions[action].fallback);
@@ -99,6 +140,16 @@ export default function MobileChatChrome() {
         </div>
 
         <div className="abhiai-mobile-actions">
+          <button
+            type="button"
+            onClick={() => triggerHiddenAction('image')}
+            className="h-9 px-2.5 rounded-xl inline-flex items-center gap-1.5 border border-violet-200/80 dark:border-violet-800/70 bg-violet-50/90 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300 text-xs font-semibold shadow-xs active:scale-95 transition-all"
+            aria-label="Open Image Studio"
+            title="Create Image"
+          >
+            <ImageIcon className="w-4 h-4" />
+            <span className="hidden min-[360px]:inline">Image</span>
+          </button>
           <AccountMenu />
           <button
             type="button"
@@ -171,7 +222,6 @@ export default function MobileChatChrome() {
               >
                 <ImageIcon className="w-4 h-4 text-violet-600 dark:text-violet-400" />
                 <span>Image Studio</span>
-                {!imageStudioEnabled && <span className="abhiai-mobile-action-badge">Off</span>}
               </button>
 
               <button
