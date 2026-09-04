@@ -1,8 +1,8 @@
 import { AlertCircle, ArrowLeft } from 'lucide-react'
-import Image from 'next/image'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import AdminLoginForm from '@/components/admin/admin-login-form'
+import { AbhiLogo } from '@/components/brand/logo'
 import { getCurrentAdmin } from '@/lib/security/admin-auth'
 
 export default async function LoginPage({
@@ -33,15 +33,11 @@ export default async function LoginPage({
 
         <div className="bg-zinc-900/90 border border-zinc-800 rounded-3xl shadow-2xl p-8 backdrop-blur-sm">
           <div className="flex flex-col items-center justify-center mb-6">
-            <Image
-              src="/branding/abhiai-logo.png"
-              alt="AbhiAI"
-              width={900}
-              height={300}
-              quality={100}
+            <AbhiLogo
+              variant="full"
+              size="hero"
               priority
-              referrerPolicy="no-referrer"
-              className="h-auto w-[240px] sm:w-[280px] object-contain mb-4 select-none"
+              className="justify-center"
             />
           </div>
 

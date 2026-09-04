@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="55 65 400 400" role="img" aria-label="AbhiAI brand mark">
+  <defs>
+    <linearGradient id="main" x1="120" y1="80" x2="390" y2="420" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#12A2FF"/>
+      <stop offset=".52" stop-color="#146BFF"/>
+      <stop offset="1" stop-color="#073BC9"/>
+    </linearGradient>
+    <linearGradient id="left" x1="115" y1="115" x2="230" y2="420" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0A2D91"/>
+      <stop offset=".52" stop-color="#0B55E8"/>
+      <stop offset="1" stop-color="#08249A"/>
+    </linearGradient>
+    <linearGradient id="bar" x1="105" y1="350" x2="325" y2="285" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0A2D9C"/>
+      <stop offset=".5" stop-color="#0A55F0"/>
+      <stop offset="1" stop-color="#0C2F92"/>
+    </linearGradient>
+    <linearGradient id="star" x1="338" y1="93" x2="430" y2="185" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8A5CFF"/>
+      <stop offset="1" stop-color="#5A22DF"/>
+    </linearGradient>
+  </defs>
+  <path d="M242 101c-23 0-41 14-52 36L82 348c-14 29 5 62 38 62 14 0 27-5 39-15l82-68-39-52-61 46 98-192c7-14 8-23 3-28z" fill="url(#left)"/>
+  <path d="M242 101c23 0 41 14 53 37l123 241c11 22-5 44-29 44-23 0-38-12-48-31L221 158c-10-20-2-45 21-57z" fill="url(#main)"/>
+  <path d="M112 365c44-34 79-63 117-76 36-13 74-8 111 18l-27 48c-27-18-49-22-72-14-35 11-64 38-92 58-22 16-52 6-61-16-5-13 3-12 24-18z" fill="url(#bar)"/>
+  <path d="M384 93c8 28 18 38 46 46-28 8-38 18-46 46-8-28-18-38-46-46 28-8 38-18 46-46z" fill="url(#star)"/>
+</svg>
