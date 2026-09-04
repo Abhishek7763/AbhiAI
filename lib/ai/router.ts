@@ -1,6 +1,7 @@
 import type { AIConnection } from '@/lib/connections';
 import { listRuntimeConnections } from '@/lib/data/ai-config';
 import { getRoutingConfig, type RoutingConfig } from '@/lib/data/routing-config';
+import { resolvePublicAlias } from '@/lib/data/public-aliases';
 import { getAbhiAIModeInstruction } from '@/lib/ai/modes';
 import { listRuntimeRoutingSignals, type RuntimeRoutingSignal } from '@/lib/ai/runtime-health';
 import { withTimeout } from '@/lib/ai/timeout';
@@ -220,12 +221,23 @@ function selectDiverseCandidates(scored: ScoredConnection[]) {
  * Resolves the primary connection and a bounded set of smart fallbacks.
  * AbhiAI Auto ranks the full admin pool by health, recent success, latency,
  * capabilities and priority, while Free Guard/cooldown filtering stays enforced.
+ * Public Phase 9 aliases are resolved server-side so provider/model identities
+ * never need to be exposed in the public selector.
  */
 export async function resolveRoutePlan(
   requestedModelOrAlias: string,
   requiresMultimodal: boolean = false,
   requestText: string = '',
 ): Promise<SmartRoutePlan> {
+  const publicAliasTarget = requestedModelOrAlias?.startsWith('abhiai-')
+    ? await resolvePublicAlias(requestedModelOrAlias)
+    : null;
+  const resolvedRequest = publicAliasTarget || requestedModelOrAlias;
+
+  if (requestedModelOrAlias?.startsWith('abhiai-') && !publicAliasTarget) {
+    return { primary: null, fallbacks: [] };
+  }
+
   const [runtimeConnections, routingConfig, routingSignals] = await withTimeout(
     Promise.all([
       listRuntimeConnections(),
@@ -251,7 +263,7 @@ export async function resolveRoutePlan(
   }
 
   const intent = detectIntent(requestText, requiresMultimodal);
-  const isAutoRequest = !requestedModelOrAlias || requestedModelOrAlias === 'default' || requestedModelOrAlias === 'auto';
+  const isAutoRequest = !resolvedRequest || resolvedRequest === 'default' || resolvedRequest === 'auto';
 
   if (isAutoRequest) {
     const poolSet = new Set(routingConfig.poolModelRecordIds);
@@ -277,10 +289,10 @@ export async function resolveRoutePlan(
 
   const requested = compatibleConnections.find(
     (connection) =>
-      connection.id === requestedModelOrAlias ||
-      connection.assignedAlias === requestedModelOrAlias ||
-      connection.name === requestedModelOrAlias ||
-      connection.modelId === requestedModelOrAlias,
+      connection.id === resolvedRequest ||
+      connection.assignedAlias === resolvedRequest ||
+      connection.name === resolvedRequest ||
+      connection.modelId === resolvedRequest,
   );
 
   const rankedFallbacks = selectDiverseCandidates(
