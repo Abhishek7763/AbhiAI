@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { getRuntimeInstructions } from "@/lib/ai/runtime-instructions";
 import { resolveRoutePlan, RouteCandidate } from "@/lib/ai/router";
 import { getProviderAdapter } from "@/lib/ai/providers/registry";
+import { getAvailableAgentTools } from "@/lib/ai/tools";
+import { executeAgentTool } from "@/lib/ai/tool-executor";
+import { getStoredAgents } from "@/lib/data/admin-config";
 import { logUsageEvent } from "@/lib/usage-logger";
 import { recordRuntimeModelFailure, recordRuntimeModelSuccess } from "@/lib/ai/runtime-health";
 import { withTimeout } from "@/lib/ai/timeout";
@@ -18,6 +21,7 @@ import {
 export const maxDuration = 180;
 
 const PROVIDER_TIMEOUT_MS = 35_000;
+const TOOL_PROVIDER_TIMEOUT_MS = 90_000;
 const RUNTIME_HEALTH_WRITE_TIMEOUT_MS = 2_500;
 
 function isClientAbort(error: unknown) {
@@ -53,7 +57,21 @@ export async function POST(req: Request) {
         ))
       : [];
     const safeHistory = sanitizeChatHistory(history);
-    requestedModel = typeof modelId === 'string' && modelId ? modelId : 'default';
+    const requestedRoute = typeof modelId === 'string' && modelId ? modelId : 'default';
+
+    let activeAgent: Awaited<ReturnType<typeof getStoredAgents>>[number] | null = null;
+    if (requestedRoute.startsWith('agent:')) {
+      const agentId = requestedRoute.slice('agent:'.length).trim();
+      activeAgent = (await getStoredAgents()).find(
+        (agent) => agent.id === agentId && agent.visibility === 'public',
+      ) ?? null;
+      if (!activeAgent) {
+        return NextResponse.json({ error: 'This AI agent is unavailable.' }, { status: 404 });
+      }
+    }
+
+    requestedModel = activeAgent?.preferredModelOrAlias || requestedRoute;
+    const effectiveHistory = activeAgent?.memoryEnabled === false ? [] : safeHistory;
 
     if (!userMessage && currentAttachments.length === 0) {
       return NextResponse.json({ error: "Message or attachment is required" }, { status: 400 });
@@ -76,6 +94,24 @@ export async function POST(req: Request) {
 
     const globalInstructions = await getRuntimeInstructions();
     const executionChain: RouteCandidate[] = [routePlan.primary, ...routePlan.fallbacks];
+    const allowedToolNames = new Set(activeAgent?.allowedTools ?? []);
+    const toolExecutionContext = {
+      attachments: currentAttachments,
+      userId: guard.userId,
+      imageSettings: guard.settings,
+      runtime: activeAgent ? {
+        temperature: activeAgent.temperature,
+        maxTokens: activeAgent.maxTokens,
+      } : undefined,
+    };
+    const toolContext = {
+      ...toolExecutionContext,
+      executeTool: (name: string, args?: Record<string, unknown>) =>
+        executeAgentTool(name, args, toolExecutionContext),
+    };
+    const tools = activeAgent
+      ? getAvailableAgentTools(toolContext).filter((tool) => allowedToolNames.has(tool.name))
+      : [];
 
     let successfulReply: string | null = null;
     let executedCandidate: RouteCandidate | null = null;
@@ -85,25 +121,26 @@ export async function POST(req: Request) {
       const candidateStartedAt = Date.now();
 
       try {
-        const combinedPrompt = [globalInstructions, candidate.systemPrompt].filter(Boolean).join('\n\n');
-        const documentTextAppendix = formatDocumentsForPrompt(currentAttachments, {
-          skipNativePdf: candidate.providerId === 'google',
-        });
+        const combinedPrompt = [globalInstructions, activeAgent?.systemPrompt, candidate.systemPrompt]
+          .filter(Boolean)
+          .join('\n\n');
+        const documentTextAppendix = tools.some((tool) => tool.name === 'document_qa')
+          ? ''
+          : formatDocumentsForPrompt(currentAttachments, {
+              skipNativePdf: candidate.providerId === 'google',
+            });
         const userEffectiveContent = (userMessage || 'Please review the attached content.') + documentTextAppendix;
 
-        const chatMessages: any[] = safeHistory.map((item) => ({
+        const chatMessages: any[] = effectiveHistory.map((item) => ({
           role: item.role,
           content: item.content,
         }));
-
-        const candidateAttachments = candidate.providerId === 'google'
-          ? currentAttachments.filter((attachment) => isGeminiNativeAttachment(attachment))
-          : [];
-
         chatMessages.push({
           role: 'user',
           content: userEffectiveContent,
-          attachments: candidateAttachments,
+          attachments: candidate.providerId === 'google'
+            ? currentAttachments.filter((attachment) => isGeminiNativeAttachment(attachment))
+            : currentAttachments,
         });
 
         const adapter = getProviderAdapter(candidate.providerId, candidate.baseUrl);
@@ -115,8 +152,17 @@ export async function POST(req: Request) {
         }
 
         const reply = await withTimeout(
-          adapter.chat(candidate.apiKey, candidate.modelId, chatMessages, combinedPrompt),
-          PROVIDER_TIMEOUT_MS,
+          tools.length > 0 && adapter.chatWithTools
+            ? adapter.chatWithTools(
+                candidate.apiKey,
+                candidate.modelId,
+                chatMessages,
+                combinedPrompt,
+                tools,
+                toolContext,
+              )
+            : adapter.chat(candidate.apiKey, candidate.modelId, chatMessages, combinedPrompt),
+          tools.length > 0 ? TOOL_PROVIDER_TIMEOUT_MS : PROVIDER_TIMEOUT_MS,
           candidate.name,
         );
 
@@ -157,7 +203,7 @@ export async function POST(req: Request) {
     if (successfulReply && executedCandidate) {
       const failoverUsed = executedCandidate.connectionId !== routePlan.primary.connectionId;
       logUsageEvent({
-        modelOrAlias: requestedModel,
+        modelOrAlias: activeAgent ? `agent:${activeAgent.id}` : requestedModel,
         executedModelName: executedCandidate.name,
         executedModelId: executedCandidate.modelId,
         connectionId: executedCandidate.connectionId,
@@ -174,11 +220,13 @@ export async function POST(req: Request) {
         reply: successfulReply,
         model: executedCandidate.name,
         failoverUsed,
+        agentId: activeAgent?.id ?? null,
+        toolsActive: tools.map((tool) => tool.name),
       });
     }
 
     logUsageEvent({
-      modelOrAlias: requestedModel,
+      modelOrAlias: activeAgent ? `agent:${activeAgent.id}` : requestedModel,
       provider: 'all-failed',
       promptLength: userMessage.length,
       responseLength: 0,

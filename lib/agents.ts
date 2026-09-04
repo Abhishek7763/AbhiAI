@@ -1,3 +1,5 @@
+export type AgentToolPermission = 'web_search' | 'document_qa' | 'image_generation';
+
 export interface AIAgent {
   id: string;
   name: string;
@@ -7,8 +9,11 @@ export interface AIAgent {
   preferredModelOrAlias: string;
   fallbackModelOrAlias?: string;
   requiredCapabilities: ('text' | 'vision' | 'coding' | 'reasoning' | 'fast')[];
+  allowedTools: AgentToolPermission[];
   visibility: 'public' | 'admin_only' | 'disabled';
   temperature: number;
+  memoryEnabled: boolean;
+  maxTokens: number;
   sampleStarters: string[];
   createdAt: string;
 }
@@ -28,8 +33,11 @@ Your goal is to help students learn deeply by:
 3. Providing clear summaries and key takeaways.`,
     preferredModelOrAlias: 'abhiai-think',
     requiredCapabilities: ['text', 'reasoning'],
+    allowedTools: ['web_search', 'document_qa'],
     visibility: 'public',
     temperature: 0.5,
+    memoryEnabled: true,
+    maxTokens: 4096,
     sampleStarters: [
       'Explain Quantum Computing using simple everyday analogies',
       'Quiz me on World War II history with 3 multiple-choice questions',
@@ -49,8 +57,11 @@ Follow strict clean code principles:
 - Explain trade-offs between architectural choices.`,
     preferredModelOrAlias: 'abhiai-code',
     requiredCapabilities: ['text', 'coding'],
+    allowedTools: ['web_search', 'document_qa'],
     visibility: 'public',
     temperature: 0.2,
+    memoryEnabled: true,
+    maxTokens: 4096,
     sampleStarters: [
       'Write a high-performance LRU cache in TypeScript with O(1) ops',
       'Review this SQL query and suggest index optimizations',
@@ -70,8 +81,11 @@ Provide comprehensive, structured analyses with:
 - Critical counter-arguments and future outlook.`,
     preferredModelOrAlias: 'abhiai-think',
     requiredCapabilities: ['text', 'reasoning'],
+    allowedTools: ['web_search', 'document_qa'],
     visibility: 'public',
     temperature: 0.4,
+    memoryEnabled: true,
+    maxTokens: 6144,
     sampleStarters: [
       'Synthesize current breakthroughs in solid-state battery technology',
       'Compare microservices vs modular monoliths for early-stage startups',
@@ -88,12 +102,15 @@ Provide comprehensive, structured analyses with:
 Craft captivating, high-impact prose tailored to the requested audience with compelling hooks and concise phrasing.`,
     preferredModelOrAlias: 'abhiai-creative',
     requiredCapabilities: ['text'],
+    allowedTools: ['web_search', 'document_qa', 'image_generation'],
     visibility: 'public',
     temperature: 0.8,
+    memoryEnabled: true,
+    maxTokens: 4096,
     sampleStarters: [
       'Write a compelling product launch email sequence for a new SaaS',
       'Draft a high-engagement LinkedIn thought leadership post',
-      'Write a 60-second YouTube shorts script on space exploration',
+      'Create a cinematic hero image concept for a product launch',
     ],
     createdAt: new Date().toISOString(),
   },

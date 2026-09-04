@@ -4,15 +4,18 @@ import { getStoredAgents } from '@/lib/data/admin-config';
 export async function GET() {
   try {
     const publicAgents = (await getStoredAgents())
-    .filter(a => a.visibility === 'public')
-    .map(a => ({
-      id: a.id,
-      name: a.name,
-      description: a.description,
-      icon: a.icon,
-      sampleStarters: a.sampleStarters || [],
-      preferredModelOrAlias: a.preferredModelOrAlias,
-    }));
+      .filter((agent) => agent.visibility === 'public')
+      .map((agent) => ({
+        id: agent.id,
+        name: agent.name,
+        description: agent.description,
+        icon: agent.icon,
+        sampleStarters: agent.sampleStarters || [],
+        // The public client receives an opaque agent route token instead of the
+        // backing model alias. The server resolves the agent's current model,
+        // persona and tool permissions on every request.
+        preferredModelOrAlias: `agent:${agent.id}`,
+      }));
 
     return NextResponse.json({ agents: publicAgents });
   } catch (error) {

@@ -75,8 +75,11 @@ function agentFromRow(row: any): AIAgent {
     preferredModelOrAlias: row.preferred_model_alias ?? '',
     fallbackModelOrAlias: row.fallback_model_alias ?? undefined,
     requiredCapabilities: row.required_capabilities,
+    allowedTools: Array.isArray(row.allowed_tools) ? row.allowed_tools : ['web_search', 'document_qa'],
     visibility: row.visibility,
     temperature: Number(row.temperature),
+    memoryEnabled: row.memory_enabled !== false,
+    maxTokens: Number(row.max_tokens ?? 4096),
     sampleStarters: row.sample_starters,
     createdAt: row.created_at,
   };
@@ -102,8 +105,11 @@ export async function saveStoredAgents(agents: AIAgent[]) {
     preferred_model_alias: agent.preferredModelOrAlias || null,
     fallback_model_alias: agent.fallbackModelOrAlias || null,
     required_capabilities: agent.requiredCapabilities,
+    allowed_tools: agent.allowedTools ?? ['web_search', 'document_qa'],
     visibility: agent.visibility,
     temperature: agent.temperature,
+    memory_enabled: agent.memoryEnabled !== false,
+    max_tokens: Math.max(256, Math.min(32768, Number(agent.maxTokens) || 4096)),
     sample_starters: agent.sampleStarters,
   }));
   const { error: upsertError } = rows.length ? await supabase.from('ai_agents').upsert(rows) : { error: null };
@@ -215,7 +221,7 @@ export async function insertUsageEvent(entry: Omit<UsageEntry, 'id' | 'timestamp
 
     if (providerRow) {
       providerRecordId = providerRow.id;
-      const keys = ((providerRow as any).ai_api_keys ?? [])
+      const keys = ((providerRow as any).ai_providers?.ai_api_keys ?? [])
         .filter((key: any) => key.status === 'active')
         .sort((a: any, b: any) => (a.priority ?? 100) - (b.priority ?? 100));
       apiKeyRecordId = keys[0]?.id ?? null;
