@@ -1,5 +1,9 @@
-import { GoogleGenAI, type Model } from '@google/genai';
+import { GoogleGenAI, type Content, type Model, type Part } from '@google/genai';
+import type { AgentToolContext, AgentToolDefinition } from '@/lib/ai/tools';
+import { executeAgentTool } from '@/lib/ai/tools';
 import type { AIModel, ChatMessage, ProviderAdapter } from './base';
+
+const MAX_TOOL_ROUNDS = 3;
 
 function normalizeModelId(name?: string): string {
   return (name || '').replace(/^models\//, '');
@@ -46,6 +50,30 @@ function safeGoogleError(error: unknown, fallback: string): Error {
   }
 
   return new Error(fallback);
+}
+
+function messageParts(message: ChatMessage): Part[] {
+  const parts: Part[] = [];
+  if (message.content) parts.push({ text: message.content });
+
+  for (const attachment of message.attachments ?? []) {
+    parts.push({
+      inlineData: {
+        data: attachment.data,
+        mimeType: attachment.type,
+      },
+    });
+  }
+
+  if (parts.length === 0) parts.push({ text: ' ' });
+  return parts;
+}
+
+function toGoogleContent(message: ChatMessage): Content {
+  return {
+    role: message.role === 'user' ? 'user' : 'model',
+    parts: messageParts(message),
+  };
 }
 
 export class GoogleProvider implements ProviderAdapter {
@@ -102,32 +130,7 @@ export class GoogleProvider implements ProviderAdapter {
 
   async chat(apiKey: string, modelId: string, messages: ChatMessage[], systemPrompt?: string): Promise<string> {
     const ai = new GoogleGenAI({ apiKey });
-
-    const contents = messages.map((message) => {
-      const parts: Array<{ text: string } | { inlineData: { data: string; mimeType: string } }> = [];
-
-      if (message.content) {
-        parts.push({ text: message.content });
-      }
-
-      for (const attachment of message.attachments ?? []) {
-        parts.push({
-          inlineData: {
-            data: attachment.data,
-            mimeType: attachment.type,
-          },
-        });
-      }
-
-      if (parts.length === 0) {
-        parts.push({ text: ' ' });
-      }
-
-      return {
-        role: message.role === 'user' ? 'user' : 'model',
-        parts,
-      };
-    });
+    const contents = messages.map(toGoogleContent);
 
     try {
       const response = await ai.models.generateContent({
@@ -139,6 +142,68 @@ export class GoogleProvider implements ProviderAdapter {
       return response.text ?? 'No response generated.';
     } catch (error) {
       throw safeGoogleError(error, 'Google Gemini failed to generate a response.');
+    }
+  }
+
+  async chatWithTools(
+    apiKey: string,
+    modelId: string,
+    messages: ChatMessage[],
+    systemPrompt: string | undefined,
+    tools: AgentToolDefinition[],
+    context: AgentToolContext,
+  ): Promise<string> {
+    if (tools.length === 0) return this.chat(apiKey, modelId, messages, systemPrompt);
+
+    const ai = new GoogleGenAI({ apiKey });
+    const history = messages.slice(0, -1).map(toGoogleContent);
+    const currentMessage = messages.at(-1) ?? { role: 'user' as const, content: ' ' };
+
+    try {
+      const chat = ai.chats.create({
+        model: modelId,
+        history,
+        config: {
+          ...(systemPrompt ? { systemInstruction: systemPrompt } : {}),
+          tools: [{
+            functionDeclarations: tools.map((tool) => ({
+              name: tool.name,
+              description: tool.description,
+              parametersJsonSchema: tool.parameters,
+            })),
+          }],
+        },
+      });
+
+      let response = await chat.sendMessage({ message: messageParts(currentMessage) });
+
+      for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
+        const functionCalls = response.functionCalls ?? [];
+        if (functionCalls.length === 0) {
+          return response.text ?? 'No response generated.';
+        }
+
+        const toolResponses: Part[] = [];
+        for (const call of functionCalls) {
+          const name = call.name || '';
+          const result = await executeAgentTool(name, call.args, context);
+          toolResponses.push({
+            functionResponse: {
+              ...(call.id ? { id: call.id } : {}),
+              name,
+              response: result.ok
+                ? { output: result.output ?? null }
+                : { error: result.error || 'Tool execution failed.' },
+            },
+          });
+        }
+
+        response = await chat.sendMessage({ message: toolResponses });
+      }
+
+      return response.text ?? 'I could not complete the tool workflow within the allowed number of steps.';
+    } catch (error) {
+      throw safeGoogleError(error, 'Google Gemini failed while executing agent tools.');
     }
   }
 }
