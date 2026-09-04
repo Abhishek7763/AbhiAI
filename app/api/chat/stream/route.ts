@@ -1,12 +1,15 @@
 import { NextRequest } from "next/server";
 import { getRuntimeInstructions } from "@/lib/ai/runtime-instructions";
 import { resolveRoutePlan, RouteCandidate } from "@/lib/ai/router";
+import { getProviderAdapter } from "@/lib/ai/providers/registry";
+import { getAvailableAgentTools } from "@/lib/ai/tools";
 import { streamOpenAICompatible } from "@/lib/ai/stream";
 import { logUsageEvent } from "@/lib/usage-logger";
 import { recordRuntimeModelFailure, recordRuntimeModelSuccess } from "@/lib/ai/runtime-health";
 import { withStreamTimeout, withTimeout } from "@/lib/ai/timeout";
 import { sanitizeChatHistory, validateChatRequestSize, validateUserMessage } from "@/lib/ai/chat-input";
 import { fetchWebGroundingContext, type SearchResult } from "@/lib/ai/web-search";
+import { getStoredAgents } from "@/lib/data/admin-config";
 import { logger } from "@/lib/logger";
 import { protectPublicAiRequest } from "@/lib/security/public-api-guard";
 import {
@@ -89,7 +92,31 @@ export async function POST(req: NextRequest) {
       : [];
     const safeHistory = sanitizeChatHistory(history);
     const webSearchEnabled = webSearch === true;
-    requestedModel = typeof modelId === 'string' && modelId ? modelId : 'default';
+    const requestedRoute = typeof modelId === 'string' && modelId ? modelId : 'default';
+
+    let activeAgent: Awaited<ReturnType<typeof getStoredAgents>>[number] | null = null;
+    if (requestedRoute.startsWith('agent:')) {
+      const agentId = requestedRoute.slice('agent:'.length).trim();
+      if (!agentId) {
+        return new Response(JSON.stringify({ error: 'Invalid agent selection.' }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      activeAgent = (await getStoredAgents()).find(
+        (agent) => agent.id === agentId && agent.visibility === 'public',
+      ) ?? null;
+
+      if (!activeAgent) {
+        return new Response(JSON.stringify({ error: 'This AI agent is unavailable.' }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    requestedModel = activeAgent?.preferredModelOrAlias || requestedRoute;
 
     if (!userMessage && currentAttachments.length === 0) {
       return new Response(JSON.stringify({ error: "Message or attachment is required" }), {
@@ -117,10 +144,25 @@ export async function POST(req: NextRequest) {
     }
 
     const executionChain: RouteCandidate[] = [routePlan.primary, ...routePlan.fallbacks];
+    const allowedToolNames = new Set(activeAgent?.allowedTools ?? []);
+    const agentToolContext = { attachments: currentAttachments };
+    const agentTools = activeAgent
+      ? getAvailableAgentTools(agentToolContext).filter((tool) => {
+          if (!allowedToolNames.has(tool.name)) return false;
+          if (tool.name === 'web_search' && !webSearchEnabled) return false;
+          return true;
+        })
+      : [];
+    const agentToolWorkflowActive = agentTools.length > 0;
 
     let fallbackWebContext = '';
     let fallbackWebSources: SearchResult[] = [];
-    if (webSearchEnabled && userMessage && executionChain.some((candidate) => candidate.providerId !== 'google')) {
+    if (
+      !agentToolWorkflowActive &&
+      webSearchEnabled &&
+      userMessage &&
+      executionChain.some((candidate) => candidate.providerId !== 'google')
+    ) {
       const searchRes = await fetchWebGroundingContext(userMessage);
       fallbackWebContext = searchRes.contextText || '';
       fallbackWebSources = searchRes.sources || [];
@@ -165,13 +207,17 @@ export async function POST(req: NextRequest) {
 
             const combinedPrompt = [
               globalInstructions,
+              activeAgent?.systemPrompt,
               candidate.systemPrompt,
-              candidate.providerId === 'google' ? '' : fallbackWebContext,
+              candidate.providerId === 'google' || agentToolWorkflowActive ? '' : fallbackWebContext,
             ].filter(Boolean).join('\n\n');
 
-            const documentTextAppendix = formatDocumentsForPrompt(currentAttachments, {
-              skipNativePdf: candidate.providerId === 'google',
-            });
+            const shouldAppendDocuments = !agentToolWorkflowActive || !allowedToolNames.has('document_qa');
+            const documentTextAppendix = shouldAppendDocuments
+              ? formatDocumentsForPrompt(currentAttachments, {
+                  skipNativePdf: candidate.providerId === 'google',
+                })
+              : '';
             const userEffectiveContent = (userMessage || 'Please review the attached content.') + documentTextAppendix;
 
             const chatMessages: any[] = safeHistory.map((item) => ({
@@ -181,7 +227,7 @@ export async function POST(req: NextRequest) {
             chatMessages.push({
               role: 'user',
               content: userEffectiveContent,
-              attachments: candidate.providerId === 'google' ? [] : currentAttachments,
+              attachments: candidate.providerId === 'google' ? currentAttachments : currentAttachments,
             });
 
             if (!emit({
@@ -189,13 +235,39 @@ export async function POST(req: NextRequest) {
               modelName: candidate.name,
               failoverUsed: failoverHappened,
               webSearchActive: webSearchEnabled,
+              agentId: activeAgent?.id ?? null,
+              toolsActive: agentToolWorkflowActive ? agentTools.map((tool) => tool.name) : [],
             })) {
               break;
             }
 
             let responseSources: SearchResult[] = candidate.providerId === 'google' ? [] : fallbackWebSources;
 
-            if (candidate.providerId === 'google') {
+            if (agentToolWorkflowActive) {
+              const adapter = getProviderAdapter(candidate.providerId, candidate.baseUrl);
+              if (!adapter?.chatWithTools) {
+                throw new Error(`${candidate.name} does not support the active agent tools.`);
+              }
+
+              const reply = await withTimeout(
+                adapter.chatWithTools(
+                  candidate.apiKey,
+                  candidate.modelId,
+                  chatMessages,
+                  combinedPrompt,
+                  agentTools,
+                  agentToolContext,
+                ),
+                PROVIDER_TOTAL_TIMEOUT_MS,
+                `${candidate.name} tool workflow`,
+              );
+
+              if (isCancelled()) throw new Error('CLIENT_ABORTED');
+              firstTokenAt = Date.now();
+              totalOutputChars += reply.length;
+              candidateOutputChars += reply.length;
+              if (!emit({ type: 'delta', text: reply })) throw new Error('CLIENT_ABORTED');
+            } else if (candidate.providerId === 'google') {
               const ai = new GoogleGenAI({ apiKey: candidate.apiKey });
               const geminiConfig: any = { systemInstruction: combinedPrompt };
               if (webSearchEnabled) geminiConfig.tools = [{ googleSearch: {} }];
@@ -288,7 +360,7 @@ export async function POST(req: NextRequest) {
               }
             }
 
-            if (webSearchEnabled && !isCancelled()) {
+            if (!agentToolWorkflowActive && webSearchEnabled && !isCancelled()) {
               const sourceAppendix = formatSourceAppendix(responseSources);
               if (sourceAppendix) {
                 totalOutputChars += sourceAppendix.length;
@@ -311,7 +383,7 @@ export async function POST(req: NextRequest) {
 
             if (!isCancelled()) {
               logUsageEvent({
-                modelOrAlias: requestedModel,
+                modelOrAlias: activeAgent ? `agent:${activeAgent.id}` : requestedModel,
                 executedModelName: candidate.name,
                 executedModelId: candidate.modelId,
                 connectionId: candidate.connectionId,
@@ -355,7 +427,7 @@ export async function POST(req: NextRequest) {
 
         if (!executionSucceeded && !isCancelled()) {
           logUsageEvent({
-            modelOrAlias: requestedModel,
+            modelOrAlias: activeAgent ? `agent:${activeAgent.id}` : requestedModel,
             provider: 'all-failed',
             promptLength: userMessage.length,
             responseLength: 0,
