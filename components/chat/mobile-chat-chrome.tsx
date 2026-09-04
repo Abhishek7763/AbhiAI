@@ -123,6 +123,71 @@ export default function MobileChatChrome() {
 
   return (
     <>
+      <style jsx global>{`
+        @media (max-width: 767px) {
+          .abhiai-mobile-model-dock {
+            left: 0.65rem !important;
+            right: auto !important;
+            bottom: 5.75rem !important;
+            width: auto !important;
+            max-width: calc(100vw - 1.3rem) !important;
+            z-index: 70 !important;
+          }
+
+          .abhiai-mobile-compact-tools {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            width: max-content;
+            max-width: calc(100vw - 1.3rem);
+          }
+
+          .abhiai-mobile-compact-tools > :first-child {
+            min-width: 0;
+            flex: 0 1 auto;
+          }
+
+          .abhiai-mobile-compact-tool {
+            width: 2.05rem;
+            height: 2.05rem;
+            flex: 0 0 2.05rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 9999px;
+            border: 1px solid rgb(228 228 231 / 0.9);
+            background: rgb(255 255 255 / 0.92);
+            color: rgb(82 82 91);
+            box-shadow: 0 4px 14px rgb(24 24 27 / 0.06);
+            backdrop-filter: blur(12px);
+            transition: transform 160ms ease, background 160ms ease, color 160ms ease;
+          }
+
+          .dark .abhiai-mobile-compact-tool {
+            border-color: rgb(63 63 70 / 0.9);
+            background: rgb(24 24 27 / 0.9);
+            color: rgb(212 212 216);
+          }
+
+          .abhiai-mobile-compact-tool:active {
+            transform: scale(0.94);
+          }
+
+          .abhiai-mobile-compact-tool[title="Create Image"] {
+            color: rgb(124 58 237);
+          }
+
+          .abhiai-mobile-compact-tool[title="Voice Agent"] {
+            color: rgb(8 145 178);
+          }
+
+          .chat-composer-shell button[title="Voice Dictation"],
+          .chat-composer-shell button[title="Stop Listening"] {
+            display: none !important;
+          }
+        }
+      `}</style>
+
       <div className="abhiai-mobile-topbar md:hidden" aria-label="AbhiAI mobile navigation">
         <button
           type="button"
