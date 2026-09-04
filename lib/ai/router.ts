@@ -4,6 +4,7 @@ import { getRoutingConfig, type RoutingConfig } from '@/lib/data/routing-config'
 import { getAbhiAIModeInstruction } from '@/lib/ai/modes';
 import { listRuntimeRoutingSignals, type RuntimeRoutingSignal } from '@/lib/ai/runtime-health';
 import { withTimeout } from '@/lib/ai/timeout';
+import { connectionSupportsVision } from '@/lib/ai/vision-capabilities';
 
 export interface RouteCandidate {
   connectionId: string;
@@ -220,11 +221,14 @@ function selectDiverseCandidates(scored: ScoredConnection[]) {
  * Resolves the primary connection and a bounded set of smart fallbacks.
  * AbhiAI Auto ranks the full admin pool by health, recent success, latency,
  * capabilities and priority, while Free Guard/cooldown filtering stays enforced.
+ * Image requests may use any vision-capable connection; native PDF/document
+ * requests stay on Gemini so layout, images and tables remain intact.
  */
 export async function resolveRoutePlan(
   requestedModelOrAlias: string,
   requiresMultimodal: boolean = false,
   requestText: string = '',
+  requiresNativeDocument: boolean = false,
 ): Promise<SmartRoutePlan> {
   const [runtimeConnections, routingConfig, routingSignals] = await withTimeout(
     Promise.all([
@@ -242,9 +246,13 @@ export async function resolveRoutePlan(
     (connection) => connection.isActive && connection.apiKey && !isCooling(signalById.get(connection.id), now),
   );
 
-  const compatibleConnections = requiresMultimodal
-    ? healthyRuntime.filter((connection) => connection.providerId === 'google')
-    : healthyRuntime;
+  const compatibleConnections = requiresNativeDocument
+    ? healthyRuntime.filter(
+        (connection) => (connection.providerId || guessProviderId(connection.baseUrl, connection.modelId)) === 'google',
+      )
+    : requiresMultimodal
+      ? healthyRuntime.filter((connection) => connectionSupportsVision(connection, signalById.get(connection.id)))
+      : healthyRuntime;
 
   if (compatibleConnections.length === 0) {
     return { primary: null, fallbacks: [] };

@@ -12,6 +12,7 @@ import { protectPublicAiRequest } from "@/lib/security/public-api-guard";
 import {
   formatDocumentsForPrompt,
   isGeminiNativeAttachment,
+  isImageAttachment,
   isPdfAttachment,
   normalizeAttachmentBase64,
   validateInlineAttachments,
@@ -106,8 +107,14 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const requiresNativeMultimodal = currentAttachments.some((attachment) => isGeminiNativeAttachment(attachment));
-    const routePlan = await resolveRoutePlan(requestedModel, requiresNativeMultimodal, userMessage);
+    const requiresVision = currentAttachments.some((attachment) => isImageAttachment(attachment));
+    const requiresNativeDocument = currentAttachments.some((attachment) => isPdfAttachment(attachment));
+    const routePlan = await resolveRoutePlan(
+      requestedModel,
+      requiresVision || requiresNativeDocument,
+      userMessage,
+      requiresNativeDocument,
+    );
 
     if (!routePlan.primary) {
       return new Response(JSON.stringify({ error: "No usable AI model is configured for this request. Open Admin > Integrations and Smart Routing." }), {
@@ -181,7 +188,9 @@ export async function POST(req: NextRequest) {
             chatMessages.push({
               role: 'user',
               content: userEffectiveContent,
-              attachments: candidate.providerId === 'google' ? [] : currentAttachments,
+              attachments: candidate.providerId === 'google'
+                ? []
+                : currentAttachments.filter((attachment) => isImageAttachment(attachment)),
             });
 
             if (!emit({

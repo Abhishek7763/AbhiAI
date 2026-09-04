@@ -11,6 +11,8 @@ import { protectPublicAiRequest } from "@/lib/security/public-api-guard";
 import {
   formatDocumentsForPrompt,
   isGeminiNativeAttachment,
+  isImageAttachment,
+  isPdfAttachment,
   validateInlineAttachments,
   type AttachmentPayload,
 } from "@/lib/files/document-extractor";
@@ -64,8 +66,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: attachmentError }, { status: 413 });
     }
 
-    const requiresNativeMultimodal = currentAttachments.some((attachment) => isGeminiNativeAttachment(attachment));
-    const routePlan = await resolveRoutePlan(requestedModel, requiresNativeMultimodal, userMessage);
+    const requiresVision = currentAttachments.some((attachment) => isImageAttachment(attachment));
+    const requiresNativeDocument = currentAttachments.some((attachment) => isPdfAttachment(attachment));
+    const routePlan = await resolveRoutePlan(
+      requestedModel,
+      requiresVision || requiresNativeDocument,
+      userMessage,
+      requiresNativeDocument,
+    );
 
     if (!routePlan.primary) {
       return NextResponse.json(
@@ -98,7 +106,7 @@ export async function POST(req: Request) {
 
         const candidateAttachments = candidate.providerId === 'google'
           ? currentAttachments.filter((attachment) => isGeminiNativeAttachment(attachment))
-          : [];
+          : currentAttachments.filter((attachment) => isImageAttachment(attachment));
 
         chatMessages.push({
           role: 'user',
