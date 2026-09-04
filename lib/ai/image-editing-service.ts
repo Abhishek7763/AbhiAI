@@ -34,6 +34,11 @@ function openAiSize(aspectRatio: string): '1024x1024' | '1536x1024' | '1024x1536
   return '1024x1024';
 }
 
+function blobFromBuffer(bytes: Buffer, mimeType: string) {
+  const copy = Uint8Array.from(bytes);
+  return new Blob([copy.buffer], { type: mimeType });
+}
+
 async function persistEditedImage(args: {
   userId: string | null;
   imageUrl: string;
@@ -121,8 +126,8 @@ async function editWithOpenAI(apiKey: string, source: ParsedDataImage, prompt: s
   form.set('model', OPENAI_IMAGE_MODEL);
   form.set('prompt', prompt);
   form.set('size', openAiSize(aspectRatio));
-  form.set('image', new Blob([source.bytes], { type: source.mimeType }), `source.${source.extension}`);
-  if (mask) form.set('mask', new Blob([mask.bytes], { type: mask.mimeType }), `mask.${mask.extension}`);
+  form.set('image', blobFromBuffer(source.bytes, source.mimeType), `source.${source.extension}`);
+  if (mask) form.set('mask', blobFromBuffer(mask.bytes, mask.mimeType), `mask.${mask.extension}`);
 
   const response = await fetch('https://api.openai.com/v1/images/edits', {
     method: 'POST',
