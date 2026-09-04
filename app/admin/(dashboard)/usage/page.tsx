@@ -82,8 +82,25 @@ export default function UsagePage() {
   }, []);
 
   useEffect(() => {
-    void loadUsage();
-  }, [loadUsage]);
+    let active = true;
+
+    fetch('/api/admin/usage', { cache: 'no-store' })
+      .then(async (response) => {
+        const json = await response.json();
+        if (!response.ok) throw new Error(json?.error || 'Failed to load usage analytics.');
+        if (active) setData(json);
+      })
+      .catch((loadError) => {
+        if (active) setError(loadError instanceof Error ? loadError.message : 'Failed to load usage analytics.');
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   if (loading) {
     return <div className="h-64 flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-zinc-400" /></div>;
