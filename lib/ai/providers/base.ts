@@ -21,26 +21,20 @@ export interface ProviderAdapter {
   id: string;
   name: string;
 
-  /**
-   * Tests the connection using the provided API key
-   * Returns true if successful, throws error if failed
-   */
+  /** Tests the connection using the provided API key. */
   testConnection(apiKey: string): Promise<boolean>;
 
-  /**
-   * Discovers models available for this provider
-   */
+  /** Discovers models available for this provider. */
   discoverModels(apiKey: string): Promise<AIModel[]>;
 
-  /**
-   * Send a plain chat request.
-   */
+  /** Sends a normal chat request. */
   chat(apiKey: string, modelId: string, messages: ChatMessage[], systemPrompt?: string): Promise<string>;
 
   /**
-   * Optional native function/tool-calling path. Providers that implement this
-   * allow the model to choose tools during the response instead of AbhiAI
-   * pre-running every tool heuristically.
+   * Optional provider-native function/tool calling path. The gateway only calls
+   * this method with tools that have already passed agent permission filtering.
+   * Implementations must keep their tool loop bounded and execute tools through
+   * AbhiAI's server-side tool registry rather than trusting model-returned data.
    */
   chatWithTools?(
     apiKey: string,
