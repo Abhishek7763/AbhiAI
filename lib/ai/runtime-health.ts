@@ -9,6 +9,7 @@ type RuntimeState = {
   lastSuccessAt?: string | null;
   lastFailureAt?: string | null;
   lastErrorCode?: string | number | null;
+  lastFailureReason?: string | null;
   consecutiveFailures?: number;
   lastLatencyMs?: number | null;
   avgLatencyMs?: number | null;
@@ -22,6 +23,7 @@ export type RuntimeRoutingSignal = {
   lastSuccessAt: string | null;
   lastFailureAt: string | null;
   lastErrorCode: string | number | null;
+  lastFailureReason: string | null;
   consecutiveFailures: number;
   lastLatencyMs: number | null;
   avgLatencyMs: number | null;
@@ -95,6 +97,9 @@ export async function listRuntimeRoutingSignals(): Promise<RuntimeRoutingSignal[
       lastSuccessAt: typeof runtime.lastSuccessAt === 'string' ? runtime.lastSuccessAt : null,
       lastFailureAt: typeof runtime.lastFailureAt === 'string' ? runtime.lastFailureAt : null,
       lastErrorCode: runtime.lastErrorCode ?? null,
+      lastFailureReason: typeof runtime.lastFailureReason === 'string' && runtime.lastFailureReason
+        ? runtime.lastFailureReason
+        : null,
       consecutiveFailures: Math.max(0, Number(runtime.consecutiveFailures || 0)),
       lastLatencyMs: validNumber(runtime.lastLatencyMs),
       avgLatencyMs: validNumber(runtime.avgLatencyMs),
@@ -146,6 +151,7 @@ export async function recordRuntimeModelSuccess(modelRecordId: string, latencyMs
             cooldownUntil: null,
             lastSuccessAt: now,
             lastErrorCode: null,
+            lastFailureReason: null,
             consecutiveFailures: 0,
             lastLatencyMs: measuredLatency === null ? previous.lastLatencyMs ?? null : Math.round(measuredLatency),
             avgLatencyMs,
@@ -181,6 +187,7 @@ export async function recordRuntimeModelFailure(modelRecordId: string, error: un
             cooldownUntil: cooldownMs > 0 ? new Date(now.getTime() + cooldownMs).toISOString() : null,
             lastFailureAt: now.toISOString(),
             lastErrorCode: diagnosis.code,
+            lastFailureReason: diagnosis.userTitle,
             consecutiveFailures,
           },
         },
