@@ -78,25 +78,29 @@ export default function ChatPage() {
   const activeAgent = agents.find((item) => item.id === active?.agentId) ?? null;
 
   useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as WorkspaceConversation[];
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setConversations(parsed);
-          setActiveId(parsed[0].id);
-          setHydrated(true);
-          return;
+    const timer = window.setTimeout(() => {
+      try {
+        const raw = window.localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw) as WorkspaceConversation[];
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setConversations(parsed);
+            setActiveId(parsed[0].id);
+            setHydrated(true);
+            return;
+          }
         }
+      } catch {
+        // Corrupt local workspace data should never block the admin page.
       }
-    } catch {
-      // Corrupt local workspace data should never block the admin page.
-    }
 
-    const first = makeConversation();
-    setConversations([first]);
-    setActiveId(first.id);
-    setHydrated(true);
+      const first = makeConversation();
+      setConversations([first]);
+      setActiveId(first.id);
+      setHydrated(true);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
   }, []);
 
   useEffect(() => {
@@ -259,20 +263,26 @@ export default function ChatPage() {
           if (!trimmed.startsWith('data:')) continue;
           const payload = trimmed.replace(/^data:\s*/, '');
           if (!payload) continue;
-          const parsed = JSON.parse(payload) as { type?: string; text?: string; modelName?: string; error?: string };
-          if (parsed.type === 'meta') modelUsed = parsed.modelName || modelUsed;
-          if (parsed.type === 'error') throw new Error(parsed.error || 'Streaming failed.');
-          if (parsed.type === 'delta' && parsed.text) {
-            accumulated += parsed.text;
-            updateConversation(active.id, {
-              messages: [...baseMessages, {
-                id: assistantId,
-                role: 'assistant',
-                content: accumulated,
-                model: modelUsed,
-                isStreaming: true,
-              }],
-            });
+
+          try {
+            const parsed = JSON.parse(payload) as { type?: string; text?: string; modelName?: string; error?: string };
+            if (parsed.type === 'meta') modelUsed = parsed.modelName || modelUsed;
+            if (parsed.type === 'error') throw new Error(parsed.error || 'Streaming failed.');
+            if (parsed.type === 'delta' && parsed.text) {
+              accumulated += parsed.text;
+              updateConversation(active.id, {
+                messages: [...baseMessages, {
+                  id: assistantId,
+                  role: 'assistant',
+                  content: accumulated,
+                  model: modelUsed,
+                  isStreaming: true,
+                }],
+              });
+            }
+          } catch (parseError) {
+            if (parseError instanceof SyntaxError) continue;
+            throw parseError;
           }
         }
       }
