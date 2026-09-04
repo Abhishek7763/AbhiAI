@@ -1,4 +1,5 @@
 export type AgentToolPermission = 'web_search' | 'document_qa' | 'image_generation';
+export type AgentCapability = 'text' | 'vision' | 'coding' | 'reasoning' | 'fast';
 
 export interface AIAgent {
   id: string;
@@ -7,8 +8,9 @@ export interface AIAgent {
   icon: string;
   systemPrompt: string;
   preferredModelOrAlias: string;
+  modelPool: string[];
   fallbackModelOrAlias?: string;
-  requiredCapabilities: ('text' | 'vision' | 'coding' | 'reasoning' | 'fast')[];
+  requiredCapabilities: AgentCapability[];
   allowedTools: AgentToolPermission[];
   visibility: 'public' | 'admin_only' | 'disabled';
   temperature: number;
@@ -32,6 +34,7 @@ Your goal is to help students learn deeply by:
 2. Asking interactive follow-up questions to test comprehension.
 3. Providing clear summaries and key takeaways.`,
     preferredModelOrAlias: 'abhiai-think',
+    modelPool: ['abhiai-think', 'abhiai-fast'],
     requiredCapabilities: ['text', 'reasoning'],
     allowedTools: ['web_search', 'document_qa'],
     visibility: 'public',
@@ -56,6 +59,7 @@ Follow strict clean code principles:
 - Identify edge cases, performance bottlenecks, and security vulnerabilities.
 - Explain trade-offs between architectural choices.`,
     preferredModelOrAlias: 'abhiai-code',
+    modelPool: ['abhiai-code', 'abhiai-think'],
     requiredCapabilities: ['text', 'coding'],
     allowedTools: ['web_search', 'document_qa'],
     visibility: 'public',
@@ -80,6 +84,7 @@ Provide comprehensive, structured analyses with:
 - Detailed comparative pros/cons tables
 - Critical counter-arguments and future outlook.`,
     preferredModelOrAlias: 'abhiai-think',
+    modelPool: ['abhiai-think', 'abhiai-fast'],
     requiredCapabilities: ['text', 'reasoning'],
     allowedTools: ['web_search', 'document_qa'],
     visibility: 'public',
@@ -101,6 +106,7 @@ Provide comprehensive, structured analyses with:
     systemPrompt: `You are AbhiAI Copy & Content Strategist, a master wordsmith and creative director created by Abhishek.
 Craft captivating, high-impact prose tailored to the requested audience with compelling hooks and concise phrasing.`,
     preferredModelOrAlias: 'abhiai-creative',
+    modelPool: ['abhiai-creative', 'abhiai-fast'],
     requiredCapabilities: ['text'],
     allowedTools: ['web_search', 'document_qa', 'image_generation'],
     visibility: 'public',
