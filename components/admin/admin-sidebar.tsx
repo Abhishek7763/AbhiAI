@@ -13,6 +13,7 @@ import {
   FileText,
   Settings,
   Route,
+  Sparkles,
 } from 'lucide-react';
 import { AbhiLogo } from '@/components/brand/logo';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
@@ -24,6 +25,7 @@ const NAV_ITEMS = [
   { name: 'Integrations', href: '/admin/providers', icon: Boxes },
   { name: 'Models', href: '/admin/models', icon: Cpu },
   { name: 'Smart Routing', href: '/admin/routing', icon: Route },
+  { name: 'Public AI Aliases', href: '/admin/public-ai', icon: Sparkles },
   { name: 'Agents', href: '/admin/agents', icon: Bot },
   { name: 'Health', href: '/admin/health', icon: Activity },
   { name: 'Usage', href: '/admin/usage', icon: BarChart },
