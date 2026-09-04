@@ -3,6 +3,7 @@ import { getRuntimeInstructions } from "@/lib/ai/runtime-instructions";
 import { resolveRoutePlan, RouteCandidate } from "@/lib/ai/router";
 import { getProviderAdapter } from "@/lib/ai/providers/registry";
 import { getAvailableAgentTools } from "@/lib/ai/tools";
+import { executeAgentTool } from "@/lib/ai/tool-executor";
 import { streamOpenAICompatible } from "@/lib/ai/stream";
 import { logUsageEvent } from "@/lib/usage-logger";
 import { recordRuntimeModelFailure, recordRuntimeModelSuccess } from "@/lib/ai/runtime-health";
@@ -146,7 +147,7 @@ export async function POST(req: NextRequest) {
 
     const executionChain: RouteCandidate[] = [routePlan.primary, ...routePlan.fallbacks];
     const allowedToolNames = new Set(activeAgent?.allowedTools ?? []);
-    const agentToolContext = {
+    const toolExecutionContext = {
       attachments: currentAttachments,
       userId: guard.userId,
       imageSettings: guard.settings,
@@ -154,6 +155,11 @@ export async function POST(req: NextRequest) {
         temperature: activeAgent.temperature,
         maxTokens: activeAgent.maxTokens,
       } : undefined,
+    };
+    const agentToolContext = {
+      ...toolExecutionContext,
+      executeTool: (name: string, args?: Record<string, unknown>) =>
+        executeAgentTool(name, args, toolExecutionContext),
     };
     const agentTools = activeAgent
       ? getAvailableAgentTools(agentToolContext).filter((tool) => allowedToolNames.has(tool.name))

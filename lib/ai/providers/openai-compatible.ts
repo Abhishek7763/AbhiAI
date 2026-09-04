@@ -1,6 +1,6 @@
 import { AIModel, ChatMessage, ProviderAdapter } from './base';
 import { logger } from '@/lib/logger';
-import { executeAgentTool, type AgentToolContext, type AgentToolDefinition } from '@/lib/ai/tools';
+import type { AgentToolContext, AgentToolDefinition } from '@/lib/ai/tools';
 
 export interface OpenAICompatibleConfig {
   id: string;
@@ -177,10 +177,10 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
     context: AgentToolContext,
   ): Promise<string> {
     if (tools.length === 0) return this.chat(apiKey, modelId, messages, systemPrompt);
+    if (!context.executeTool) throw new Error('Server tool executor is unavailable.');
 
-    const runtime = (context as AgentToolContext & { runtime?: { temperature?: number; maxTokens?: number } }).runtime;
-    const temperature = runtime?.temperature ?? 0.7;
-    const tokenLimit = runtime?.maxTokens;
+    const temperature = context.runtime?.temperature ?? 0.7;
+    const tokenLimit = context.runtime?.maxTokens;
     const conversation: any[] = this.formatMessages(messages, systemPrompt);
     const toolPayload = tools.map((tool) => ({
       type: 'function',
@@ -231,7 +231,7 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
           args = {};
         }
 
-        const result = await executeAgentTool(name, args, context);
+        const result = await context.executeTool(name, args);
         conversation.push({
           role: 'tool',
           tool_call_id: call.id,

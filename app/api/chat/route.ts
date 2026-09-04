@@ -3,6 +3,7 @@ import { getRuntimeInstructions } from "@/lib/ai/runtime-instructions";
 import { resolveRoutePlan, RouteCandidate } from "@/lib/ai/router";
 import { getProviderAdapter } from "@/lib/ai/providers/registry";
 import { getAvailableAgentTools } from "@/lib/ai/tools";
+import { executeAgentTool } from "@/lib/ai/tool-executor";
 import { getStoredAgents } from "@/lib/data/admin-config";
 import { logUsageEvent } from "@/lib/usage-logger";
 import { recordRuntimeModelFailure, recordRuntimeModelSuccess } from "@/lib/ai/runtime-health";
@@ -40,7 +41,7 @@ export async function POST(req: Request) {
   if (!guard.ok) return guard.response;
 
   try {
-    const { message, history, modelId, attachments, webSearch } = await req.json();
+    const { message, history, modelId, attachments } = await req.json();
     const userMessage = typeof message === 'string' ? message : '';
     const messageError = validateUserMessage(message);
     if (messageError) {
@@ -57,7 +58,6 @@ export async function POST(req: Request) {
       : [];
     const safeHistory = sanitizeChatHistory(history);
     const requestedRoute = typeof modelId === 'string' && modelId ? modelId : 'default';
-    const webSearchEnabled = webSearch === true;
 
     let activeAgent: Awaited<ReturnType<typeof getStoredAgents>>[number] | null = null;
     if (requestedRoute.startsWith('agent:')) {
@@ -95,7 +95,7 @@ export async function POST(req: Request) {
     const globalInstructions = await getRuntimeInstructions();
     const executionChain: RouteCandidate[] = [routePlan.primary, ...routePlan.fallbacks];
     const allowedToolNames = new Set(activeAgent?.allowedTools ?? []);
-    const toolContext = {
+    const toolExecutionContext = {
       attachments: currentAttachments,
       userId: guard.userId,
       imageSettings: guard.settings,
@@ -103,6 +103,11 @@ export async function POST(req: Request) {
         temperature: activeAgent.temperature,
         maxTokens: activeAgent.maxTokens,
       } : undefined,
+    };
+    const toolContext = {
+      ...toolExecutionContext,
+      executeTool: (name: string, args?: Record<string, unknown>) =>
+        executeAgentTool(name, args, toolExecutionContext),
     };
     const tools = activeAgent
       ? getAvailableAgentTools(toolContext).filter((tool) => allowedToolNames.has(tool.name))

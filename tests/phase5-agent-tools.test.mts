@@ -8,10 +8,11 @@ function source(path: string) {
 
 test('phase 5 exposes all three callable agent tools', () => {
   const tools = source('lib/ai/tools.ts');
+  const executor = source('lib/ai/tool-executor.ts');
   assert.match(tools, /name: 'web_search'/);
   assert.match(tools, /name: 'document_qa'/);
   assert.match(tools, /name: 'image_generation'/);
-  assert.match(tools, /generateImageWithConfiguredProviders/);
+  assert.match(executor, /generateImageWithConfiguredProviders/);
 });
 
 test('specialized agents can use live search without the manual web toggle', () => {
@@ -33,7 +34,19 @@ test('agent runtime controls are enforced by the gateway and providers', () => {
   assert.match(google, /maxOutputTokens/);
   assert.match(google, /temperature: runtime\.temperature/);
   assert.match(openai, /max_tokens: tokenLimit/);
-  assert.match(openai, /const temperature = runtime\?\.temperature \?\? 0\.7/);
+  assert.match(openai, /const temperature = context\.runtime\?\.temperature \?\? 0\.7/);
+});
+
+test('providers receive a server executor callback without importing server-only tool code', () => {
+  const google = source('lib/ai/providers/google.ts');
+  const openai = source('lib/ai/providers/openai-compatible.ts');
+  const tools = source('lib/ai/tools.ts');
+
+  assert.match(google, /context\.executeTool/);
+  assert.match(openai, /context\.executeTool/);
+  assert.doesNotMatch(google, /tool-executor/);
+  assert.doesNotMatch(openai, /tool-executor/);
+  assert.doesNotMatch(tools, /server-only|image-generation-service|admin-config/);
 });
 
 test('agent builder exposes tools, memory, temperature, max tokens and visibility', () => {
@@ -45,9 +58,9 @@ test('agent builder exposes tools, memory, temperature, max tokens and visibilit
   assert.match(builder, /Visibility/);
 });
 
-test('image API and agent tools share the same generation service', () => {
+test('image API and agent executor share the same generation service', () => {
   const imageRoute = source('app/api/generate-image/route.ts');
-  const tools = source('lib/ai/tools.ts');
+  const executor = source('lib/ai/tool-executor.ts');
   assert.match(imageRoute, /generateImageWithConfiguredProviders/);
-  assert.match(tools, /generateImageWithConfiguredProviders/);
+  assert.match(executor, /generateImageWithConfiguredProviders/);
 });

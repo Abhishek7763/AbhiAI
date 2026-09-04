@@ -1,6 +1,5 @@
 import { GoogleGenAI, type Content, type Model, type Part } from '@google/genai';
 import type { AgentToolContext, AgentToolDefinition } from '@/lib/ai/tools';
-import { executeAgentTool } from '@/lib/ai/tools';
 import type { AIModel, ChatMessage, ProviderAdapter } from './base';
 
 const MAX_TOOL_ROUNDS = 3;
@@ -154,8 +153,9 @@ export class GoogleProvider implements ProviderAdapter {
     context: AgentToolContext,
   ): Promise<string> {
     if (tools.length === 0) return this.chat(apiKey, modelId, messages, systemPrompt);
+    if (!context.executeTool) throw new Error('Server tool executor is unavailable.');
 
-    const runtime = (context as AgentToolContext & { runtime?: { temperature?: number; maxTokens?: number } }).runtime;
+    const runtime = context.runtime;
     const ai = new GoogleGenAI({ apiKey });
     const history = messages.slice(0, -1).map(toGoogleContent);
     const currentMessage = messages.at(-1) ?? { role: 'user' as const, content: ' ' };
@@ -189,7 +189,7 @@ export class GoogleProvider implements ProviderAdapter {
         const toolResponses: Part[] = [];
         for (const call of functionCalls) {
           const name = call.name || '';
-          const result = await executeAgentTool(name, call.args, context);
+          const result = await context.executeTool(name, call.args);
           toolResponses.push({
             functionResponse: {
               ...(call.id ? { id: call.id } : {}),
