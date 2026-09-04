@@ -1,6 +1,7 @@
+import type { AppSettings } from '@/lib/app-settings';
+import { generateImageWithConfiguredProviders, ImageGenerationInputError } from '@/lib/ai/image-generation-service';
 import { fetchWebGroundingContext } from '@/lib/ai/web-search';
 import { extractDocumentText, isImageAttachment, type AttachmentPayload } from '@/lib/files/document-extractor';
-import { moderateImagePrompt } from '@/lib/security/image-moderation';
 
 export type AgentToolName = 'web_search' | 'document_qa' | 'image_generation';
 
@@ -12,6 +13,8 @@ export interface AgentToolDefinition {
 
 export interface AgentToolContext {
   attachments?: AttachmentPayload[];
+  userId?: string | null;
+  imageSettings?: Pick<AppSettings, 'freeOnlyMode' | 'maxPromptLength' | 'customImageApiEndpoint'>;
 }
 
 export interface AgentToolResult {
@@ -130,52 +133,13 @@ function buildDocumentAnswerContext(query: string, attachments: AttachmentPayloa
   }));
 }
 
-function imageDimensions(aspectRatio: string) {
-  switch (aspectRatio) {
-    case '16:9': return { width: 1280, height: 720 };
-    case '9:16': return { width: 720, height: 1280 };
-    case '4:3': return { width: 1024, height: 768 };
-    case '3:4': return { width: 768, height: 1024 };
-    default: return { width: 1024, height: 1024 };
-  }
-}
-
-function enhanceImagePrompt(prompt: string, style: string) {
-  const styles: Record<string, string> = {
-    photorealistic: 'highly detailed photorealistic professional photography, natural lighting, realistic materials and textures',
-    cinematic: 'cinematic film still, dramatic composition, atmospheric lighting, premium color grading',
-    digital_art: 'premium digital painting, concept art, dynamic composition, intricate details',
-    anime: 'polished anime aesthetic, vibrant colors, clean line art, expressive lighting',
-    '3d_render': 'polished 3D digital art, ray-traced lighting, volumetric shading, detailed materials',
-    minimalist: 'minimalist graphic design, clean modern forms, elegant negative space, balanced composition',
-    fantasy: 'high fantasy concept art, mystical atmosphere, magical particles, ethereal glow, detailed environment',
-    oil_painting: 'classical oil painting on textured canvas, rich brushwork, dramatic light and shadow',
-  };
-  const suffix = styles[style];
-  return suffix ? `${prompt}, ${suffix}` : prompt;
-}
-
-function generateFreeImage(prompt: string, style: string, aspectRatio: string) {
-  const enhancedPrompt = enhanceImagePrompt(prompt, style);
-  const { width, height } = imageDimensions(aspectRatio);
-  const seed = Math.floor(Math.random() * 10_000_000);
-  const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(enhancedPrompt)}?width=${width}&height=${height}&seed=${seed}&nologo=true&enhance=false&model=flux`;
-  return {
-    prompt,
-    enhancedPrompt,
-    style,
-    aspectRatio,
-    provider: 'Pollinations Flux',
-    model: 'flux',
-    seed,
-    imageUrl,
-    markdown: `![Generated image](${imageUrl})`,
-  };
-}
-
 export function getAvailableAgentTools(context: AgentToolContext): AgentToolDefinition[] {
   const hasDocuments = (context.attachments ?? []).some((attachment) => !isImageAttachment(attachment));
-  return AGENT_TOOL_DEFINITIONS.filter((tool) => tool.name !== 'document_qa' || hasDocuments);
+  return AGENT_TOOL_DEFINITIONS.filter((tool) => {
+    if (tool.name === 'document_qa' && !hasDocuments) return false;
+    if (tool.name === 'image_generation' && !context.imageSettings) return false;
+    return true;
+  });
 }
 
 export async function executeAgentTool(
@@ -184,23 +148,41 @@ export async function executeAgentTool(
   context: AgentToolContext,
 ): Promise<AgentToolResult> {
   if (name === 'image_generation') {
-    const prompt = typeof args?.prompt === 'string' ? args.prompt.trim().slice(0, 1500) : '';
-    if (!prompt) return { ok: false, error: 'A non-empty image prompt is required.' };
-
-    const moderation = moderateImagePrompt(prompt);
-    if (!moderation.allowed) {
-      return { ok: false, error: 'This image request cannot be generated safely. Ask the user to revise the prompt.' };
+    if (!context.imageSettings) {
+      return { ok: false, error: 'Image generation is not configured for this request.' };
     }
 
+    const prompt = typeof args?.prompt === 'string' ? args.prompt.trim() : '';
     const style = typeof args?.style === 'string' ? args.style : 'photorealistic';
     const aspectRatio = typeof args?.aspect_ratio === 'string' ? args.aspect_ratio : '1:1';
-    return {
-      ok: true,
-      output: {
-        ...generateFreeImage(prompt, style, aspectRatio),
-        instruction: 'Include the provided Markdown image exactly once in the final answer. Do not invent a different image URL.',
-      },
-    };
+
+    try {
+      const result = await generateImageWithConfiguredProviders({
+        prompt,
+        style,
+        aspectRatio,
+        engine: 'auto',
+        userId: context.userId ?? null,
+        settings: context.imageSettings,
+      });
+
+      return {
+        ok: true,
+        output: {
+          ...result,
+          markdown: `![Generated image](${result.imageUrl})`,
+          instruction: 'Include the provided Markdown image exactly once in the final answer. Do not invent a different image URL.',
+        },
+      };
+    } catch (error) {
+      if (error instanceof ImageGenerationInputError) {
+        return { ok: false, error: error.message };
+      }
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : 'Image generation failed.',
+      };
+    }
   }
 
   const query = typeof args?.query === 'string' ? args.query.trim().slice(0, 500) : '';
