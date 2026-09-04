@@ -31,10 +31,10 @@ export const metadata: Metadata = {
     template: '%s · AbhiAI',
   },
   description: 'AbhiAI — Intelligence. Clarity. Innovation.',
+  manifest: '/manifest.webmanifest',
   icons: {
     icon: [
-      { url: '/branding/abhiai-official-mark.svg', sizes: 'any', type: 'image/svg+xml' },
-      { url: '/branding/abhiai-app-icon-dark-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/branding/abhiai-app-icon-light-512.png', sizes: '512x512', type: 'image/png' },
     ],
     apple: [
       { url: '/branding/abhiai-app-icon-light-512.png', sizes: '512x512', type: 'image/png' },
