@@ -5,8 +5,11 @@ import Link from 'next/link';
 import {
   Bot,
   Ellipsis,
+  Globe,
   Image as ImageIcon,
   Menu,
+  Mic,
+  MicOff,
   Radio,
   Share2,
   ShieldCheck,
@@ -32,17 +35,34 @@ function isImageGenerationIntent(value: string) {
 }
 
 function findImageStudioTrigger() {
-  return Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
-    button.title === 'Open AI Image Studio' ||
-    button.title === 'Image Studio' ||
-    button.title === 'Generate AI Image from prompt',
+  return (
+    document.querySelector<HTMLButtonElement>('.chat-composer-shell button[title="Generate AI Image from prompt"]') ||
+    document.querySelector<HTMLButtonElement>('button[title="Open AI Image Studio"]') ||
+    document.querySelector<HTMLButtonElement>('button[title="Image Studio"]')
+  );
+}
+
+function findVoiceAgentTrigger() {
+  return document.querySelector<HTMLButtonElement>('.chat-composer-shell button[title="Start Live Voice Conversation"]');
+}
+
+function findVoiceTypingTrigger() {
+  return (
+    document.querySelector<HTMLButtonElement>('.chat-composer-shell button[title="Stop Listening"]') ||
+    document.querySelector<HTMLButtonElement>('.chat-composer-shell button[title="Voice Dictation"]')
+  );
+}
+
+function findWebSearchTrigger() {
+  return Array.from(document.querySelectorAll<HTMLButtonElement>('.chat-composer-shell button')).find((button) =>
+    button.textContent?.trim().startsWith('Web Search'),
   );
 }
 
 export default function MobileChatChrome() {
   const [moreOpen, setMoreOpen] = useState(false);
-  const imageStudioEnabled = true;
-  const liveVoiceEnabled = process.env.NEXT_PUBLIC_ENABLE_LIVE_VOICE === 'true';
+  const [webSearchActive, setWebSearchActive] = useState(false);
+  const [voiceTypingActive, setVoiceTypingActive] = useState(false);
 
   useEffect(() => {
     if (!moreOpen) return;
@@ -69,11 +89,24 @@ export default function MobileChatChrome() {
 
       event.preventDefault();
       event.stopPropagation();
-      window.requestAnimationFrame(() => imageTrigger.click());
+      imageTrigger.click();
     };
 
     document.addEventListener('submit', handleChatSubmit, true);
     return () => document.removeEventListener('submit', handleChatSubmit, true);
+  }, []);
+
+  useEffect(() => {
+    const syncToolState = () => {
+      const webTrigger = findWebSearchTrigger();
+      setWebSearchActive(Boolean(webTrigger?.textContent?.includes('ON')));
+      setVoiceTypingActive(Boolean(document.querySelector('.chat-composer-shell button[title="Stop Listening"]')));
+    };
+
+    syncToolState();
+    const observer = new MutationObserver(syncToolState);
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true });
+    return () => observer.disconnect();
   }, []);
 
   const openSidebar = () => {
@@ -82,43 +115,56 @@ export default function MobileChatChrome() {
   };
 
   const triggerHiddenAction = (action: MobileAction) => {
-    const definitions: Record<MobileAction, { title: string; fallback: string }> = {
-      agent: {
-        title: 'Select Agent',
-        fallback: 'Agents are not available right now.',
-      },
-      image: {
-        title: 'Open AI Image Studio',
-        fallback: 'Image Studio is currently unavailable.',
-      },
-      export: {
-        title: 'Export & Share Chat',
-        fallback: 'Start a conversation before exporting it.',
-      },
-      voice: {
-        title: 'Start Live Voice Conversation',
-        fallback: 'Live Voice is currently disabled.',
-      },
-    };
+    let target: HTMLButtonElement | undefined | null;
+    let fallback = 'This feature is currently unavailable.';
 
-    if (action === 'voice' && !liveVoiceEnabled) {
-      toast.info(definitions.voice.fallback);
-      return;
+    if (action === 'image') {
+      target = findImageStudioTrigger();
+      fallback = 'Image Studio is currently unavailable.';
+    } else if (action === 'voice') {
+      target = findVoiceAgentTrigger();
+      fallback = 'Voice Agent is currently unavailable.';
+    } else {
+      const title = action === 'agent' ? 'Select Agent' : 'Export & Share Chat';
+      fallback = action === 'agent'
+        ? 'Agents are not available right now.'
+        : 'Start a conversation before exporting it.';
+      target = Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find(
+        (button) => button.title === title,
+      );
     }
 
-    const target = action === 'image'
-      ? findImageStudioTrigger()
-      : Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find(
-          (button) => button.title === definitions[action].title,
-        );
-
     if (!target || target.disabled) {
-      toast.info(definitions[action].fallback);
+      toast.info(fallback);
       return;
     }
 
     setMoreOpen(false);
-    window.requestAnimationFrame(() => target.click());
+    target.click();
+  };
+
+  const toggleWebSearch = () => {
+    const target = findWebSearchTrigger();
+    if (!target || target.disabled) {
+      toast.info('Web Search is currently unavailable.');
+      return;
+    }
+    target.click();
+    window.requestAnimationFrame(() => {
+      setWebSearchActive(Boolean(findWebSearchTrigger()?.textContent?.includes('ON')));
+    });
+  };
+
+  const toggleVoiceTyping = () => {
+    const target = findVoiceTypingTrigger();
+    if (!target || target.disabled) {
+      toast.info('Voice typing is not supported on this browser.');
+      return;
+    }
+    target.click();
+    window.requestAnimationFrame(() => {
+      setVoiceTypingActive(Boolean(document.querySelector('.chat-composer-shell button[title="Stop Listening"]')));
+    });
   };
 
   return (
@@ -126,64 +172,129 @@ export default function MobileChatChrome() {
       <style jsx global>{`
         @media (max-width: 767px) {
           .abhiai-mobile-model-dock {
-            left: 0.65rem !important;
-            right: auto !important;
-            bottom: 5.75rem !important;
+            left: 0.55rem !important;
+            right: 0.55rem !important;
+            bottom: 5.35rem !important;
             width: auto !important;
-            max-width: calc(100vw - 1.3rem) !important;
+            max-width: none !important;
             z-index: 70 !important;
           }
 
           .abhiai-mobile-compact-tools {
             display: flex;
             align-items: center;
-            gap: 0.35rem;
-            width: max-content;
-            max-width: calc(100vw - 1.3rem);
+            gap: 0.32rem;
+            width: 100%;
+            max-width: 100%;
+            overflow-x: auto;
+            scrollbar-width: none;
+            padding: 0.05rem 0;
+          }
+
+          .abhiai-mobile-compact-tools::-webkit-scrollbar {
+            display: none;
           }
 
           .abhiai-mobile-compact-tools > :first-child {
             min-width: 0;
+            max-width: 8.4rem;
             flex: 0 1 auto;
           }
 
           .abhiai-mobile-compact-tool {
-            width: 2.05rem;
-            height: 2.05rem;
-            flex: 0 0 2.05rem;
+            width: 2.08rem;
+            height: 2.08rem;
+            flex: 0 0 2.08rem;
             display: inline-flex;
             align-items: center;
             justify-content: center;
             border-radius: 9999px;
             border: 1px solid rgb(228 228 231 / 0.9);
-            background: rgb(255 255 255 / 0.92);
+            background: rgb(255 255 255 / 0.94);
             color: rgb(82 82 91);
-            box-shadow: 0 4px 14px rgb(24 24 27 / 0.06);
+            box-shadow: 0 4px 14px rgb(24 24 27 / 0.07);
             backdrop-filter: blur(12px);
-            transition: transform 160ms ease, background 160ms ease, color 160ms ease;
+            transition: transform 160ms ease, background 160ms ease, color 160ms ease, border-color 160ms ease;
           }
 
           .dark .abhiai-mobile-compact-tool {
             border-color: rgb(63 63 70 / 0.9);
-            background: rgb(24 24 27 / 0.9);
+            background: rgb(24 24 27 / 0.92);
             color: rgb(212 212 216);
           }
 
           .abhiai-mobile-compact-tool:active {
-            transform: scale(0.94);
+            transform: scale(0.93);
           }
 
-          .abhiai-mobile-compact-tool[title="Create Image"] {
+          .abhiai-mobile-compact-tool[data-tool="image"] {
             color: rgb(124 58 237);
           }
 
-          .abhiai-mobile-compact-tool[title="Voice Agent"] {
+          .abhiai-mobile-compact-tool[data-tool="voice-agent"] {
             color: rgb(8 145 178);
+          }
+
+          .abhiai-mobile-compact-tool[data-tool="voice-typing"][data-active="true"] {
+            color: rgb(220 38 38);
+            border-color: rgb(252 165 165 / 0.8);
+            background: rgb(254 242 242 / 0.95);
+          }
+
+          .dark .abhiai-mobile-compact-tool[data-tool="voice-typing"][data-active="true"] {
+            color: rgb(248 113 113);
+            border-color: rgb(127 29 29 / 0.8);
+            background: rgb(69 10 10 / 0.72);
+          }
+
+          .abhiai-mobile-compact-tool[data-tool="web"][data-active="true"] {
+            color: rgb(37 99 235);
+            border-color: rgb(147 197 253 / 0.9);
+            background: rgb(239 246 255 / 0.95);
+          }
+
+          .dark .abhiai-mobile-compact-tool[data-tool="web"][data-active="true"] {
+            color: rgb(96 165 250);
+            border-color: rgb(30 64 175 / 0.8);
+            background: rgb(23 37 84 / 0.72);
+          }
+
+          .chat-composer-shell > div > div:first-child {
+            display: none !important;
           }
 
           .chat-composer-shell button[title="Voice Dictation"],
           .chat-composer-shell button[title="Stop Listening"] {
             display: none !important;
+          }
+
+          .chat-composer-shell {
+            padding: 0.25rem 0.55rem max(0.5rem, env(safe-area-inset-bottom)) !important;
+          }
+
+          .chat-composer-shell form {
+            min-height: 3.35rem !important;
+            padding: 0.34rem 0.38rem !important;
+            border-radius: 1.55rem !important;
+            border-color: rgb(212 212 216 / 0.9) !important;
+            box-shadow: 0 10px 30px rgb(24 24 27 / 0.09) !important;
+          }
+
+          .dark .chat-composer-shell form {
+            border-color: rgb(63 63 70 / 0.9) !important;
+            box-shadow: 0 12px 34px rgb(0 0 0 / 0.28) !important;
+          }
+
+          .chat-composer-shell form > div:last-child {
+            min-height: 2.6rem;
+            align-items: center !important;
+            gap: 0.2rem !important;
+          }
+
+          .chat-composer-shell textarea {
+            min-height: 2.35rem !important;
+            padding: 0.5rem 0.45rem !important;
+            line-height: 1.35rem !important;
           }
         }
       `}</style>
@@ -217,7 +328,7 @@ export default function MobileChatChrome() {
       </div>
 
       <div className="abhiai-mobile-model-dock md:hidden">
-        <div className="abhiai-mobile-compact-tools">
+        <div className="abhiai-mobile-compact-tools" aria-label="AbhiAI quick tools">
           <ModelSelector variant="dock" />
           <button
             type="button"
@@ -225,8 +336,20 @@ export default function MobileChatChrome() {
             className="abhiai-mobile-compact-tool"
             aria-label="Create image"
             title="Create Image"
+            data-tool="image"
           >
             <ImageIcon className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={toggleVoiceTyping}
+            className="abhiai-mobile-compact-tool"
+            aria-label={voiceTypingActive ? 'Stop voice typing' : 'Start voice typing'}
+            title={voiceTypingActive ? 'Stop Voice Typing' : 'Voice Typing'}
+            data-tool="voice-typing"
+            data-active={voiceTypingActive}
+          >
+            {voiceTypingActive ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
           </button>
           <button
             type="button"
@@ -234,8 +357,20 @@ export default function MobileChatChrome() {
             className="abhiai-mobile-compact-tool"
             aria-label="Start Voice Agent"
             title="Voice Agent"
+            data-tool="voice-agent"
           >
             <Radio className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={toggleWebSearch}
+            className="abhiai-mobile-compact-tool"
+            aria-label={webSearchActive ? 'Turn Web Search off' : 'Turn Web Search on'}
+            title={webSearchActive ? 'Web Search ON' : 'Web Search OFF'}
+            data-tool="web"
+            data-active={webSearchActive}
+          >
+            <Globe className="w-4 h-4" />
           </button>
         </div>
       </div>
@@ -262,7 +397,7 @@ export default function MobileChatChrome() {
                   <div>
                     <h2 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Quick actions</h2>
                     <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                      Mobile access to desktop features
+                      Full controls and settings
                     </p>
                   </div>
                 </div>
@@ -291,7 +426,6 @@ export default function MobileChatChrome() {
                 type="button"
                 onClick={() => triggerHiddenAction('image')}
                 className="abhiai-mobile-action-card"
-                aria-disabled={!imageStudioEnabled}
               >
                 <ImageIcon className="w-4 h-4 text-violet-600 dark:text-violet-400" />
                 <span>Image Studio</span>
@@ -310,11 +444,9 @@ export default function MobileChatChrome() {
                 type="button"
                 onClick={() => triggerHiddenAction('voice')}
                 className="abhiai-mobile-action-card"
-                aria-disabled={!liveVoiceEnabled}
               >
                 <Radio className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
-                <span>Live Voice</span>
-                {!liveVoiceEnabled && <span className="abhiai-mobile-action-badge">Off</span>}
+                <span>Voice Agent</span>
               </button>
             </div>
 
