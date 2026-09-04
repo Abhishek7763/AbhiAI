@@ -26,10 +26,10 @@ export function AbhiLogoIcon({
         <span className="pointer-events-none absolute inset-[8%] rounded-full bg-blue-500/25 blur-xl dark:bg-blue-400/20" />
       )}
       <Image
-        src="/branding/abhiai-brand-mark.svg"
+        src="/branding/abhiai-official-mark.svg"
         alt=""
-        width={512}
-        height={512}
+        width={384}
+        height={345}
         className="relative z-10 h-full w-full object-contain transition-transform duration-200 hover:scale-[1.025]"
       />
     </span>

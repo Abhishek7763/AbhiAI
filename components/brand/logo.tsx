@@ -38,10 +38,10 @@ export function AbhiLogo({
       aria-hidden="true"
     >
       <Image
-        src="/branding/abhiai-brand-mark.svg"
+        src="/branding/abhiai-official-mark.svg"
         alt=""
-        width={512}
-        height={512}
+        width={384}
+        height={345}
         priority={priority}
         className="h-full w-full object-contain"
       />

@@ -33,7 +33,7 @@ export const metadata: Metadata = {
   description: 'AbhiAI — Intelligence. Clarity. Innovation.',
   icons: {
     icon: [
-      { url: '/branding/abhiai-favicon.svg', sizes: 'any', type: 'image/svg+xml' },
+      { url: '/branding/abhiai-official-mark.svg', sizes: 'any', type: 'image/svg+xml' },
       { url: '/branding/abhiai-app-icon-dark-192.png', sizes: '192x192', type: 'image/png' },
     ],
     apple: [
@@ -44,13 +44,13 @@ export const metadata: Metadata = {
     title: 'AbhiAI',
     description: 'Intelligence. Clarity. Innovation.',
     type: 'website',
-    images: ['/branding/abhiai-brand-mark.png'],
+    images: ['/branding/abhiai-app-icon-light-512.png'],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'AbhiAI',
     description: 'Intelligence. Clarity. Innovation.',
-    images: ['/branding/abhiai-brand-mark.png'],
+    images: ['/branding/abhiai-app-icon-light-512.png'],
   },
 };
 
