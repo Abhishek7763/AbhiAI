@@ -180,6 +180,7 @@ export default function MobileChatChrome() {
           bottom: 5.7rem;
           width: min(calc(100vw - 2rem), 72rem);
           touch-action: manipulation;
+          overflow: visible !important;
         }
 
         .abhiai-shared-compact-tools {
@@ -196,6 +197,7 @@ export default function MobileChatChrome() {
           backdrop-filter: blur(16px);
           -webkit-backdrop-filter: blur(16px);
           touch-action: manipulation;
+          overflow: visible !important;
         }
 
         .dark .abhiai-shared-compact-tools {
@@ -209,7 +211,18 @@ export default function MobileChatChrome() {
           max-width: 10rem;
           flex: 0 1 auto;
           position: relative;
-          z-index: 165;
+          z-index: 180;
+          overflow: visible !important;
+        }
+
+        .abhiai-shared-compact-tools [data-abhiai-model-selector="dock"] {
+          position: relative !important;
+          z-index: 185 !important;
+          overflow: visible !important;
+        }
+
+        .abhiai-shared-compact-tools [data-abhiai-model-selector="dock"] > div[role="menu"] {
+          z-index: 220 !important;
         }
 
         .abhiai-shared-compact-tool {
@@ -265,6 +278,15 @@ export default function MobileChatChrome() {
           background: rgb(239 246 255 / 0.98);
         }
 
+        /* The shared compact toolbar owns these controls now. Keep the original
+           composer controls mounted for the proxy actions, but do not render
+           duplicate visual controls on either mobile or desktop. */
+        .chat-composer-shell > div > div:first-child,
+        .chat-composer-shell button[title="Voice Dictation"],
+        .chat-composer-shell button[title="Stop Listening"] {
+          display: none !important;
+        }
+
         @media (max-width: 767px) {
           .abhiai-shared-tools-dock {
             left: 0.55rem;
@@ -275,10 +297,9 @@ export default function MobileChatChrome() {
           }
 
           .abhiai-shared-compact-tools {
-            width: 100%;
-            max-width: 100%;
-            overflow-x: auto;
-            scrollbar-width: none;
+            width: max-content;
+            max-width: calc(100vw - 1.1rem);
+            overflow: visible !important;
             padding: 0.05rem;
             background: transparent;
             border: 0;
@@ -286,21 +307,8 @@ export default function MobileChatChrome() {
             backdrop-filter: none;
           }
 
-          .abhiai-shared-compact-tools::-webkit-scrollbar {
-            display: none;
-          }
-
           .abhiai-shared-compact-tools > :first-child {
-            max-width: 8.4rem;
-          }
-
-          .chat-composer-shell > div > div:first-child {
-            display: none !important;
-          }
-
-          .chat-composer-shell button[title="Voice Dictation"],
-          .chat-composer-shell button[title="Stop Listening"] {
-            display: none !important;
+            max-width: 7.9rem;
           }
 
           .chat-composer-shell {
@@ -441,7 +449,9 @@ export default function MobileChatChrome() {
                   <AbhiLogo variant="icon" size="sm" href="" />
                   <div>
                     <h2 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Quick actions</h2>
-                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400">Full controls and settings</p>
+                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                      Full controls and settings
+                    </p>
                   </div>
                 </div>
               </div>
@@ -456,34 +466,58 @@ export default function MobileChatChrome() {
             </div>
 
             <div className="grid grid-cols-2 gap-2">
-              <button type="button" onClick={() => triggerHiddenAction('agent')} className="abhiai-mobile-action-card">
+              <button
+                type="button"
+                onClick={() => triggerHiddenAction('agent')}
+                className="abhiai-mobile-action-card"
+              >
                 <Bot className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                 <span>Agents</span>
               </button>
 
-              <button type="button" onClick={() => triggerHiddenAction('image')} className="abhiai-mobile-action-card">
+              <button
+                type="button"
+                onClick={() => triggerHiddenAction('image')}
+                className="abhiai-mobile-action-card"
+              >
                 <ImageIcon className="w-4 h-4 text-violet-600 dark:text-violet-400" />
                 <span>Image Studio</span>
               </button>
 
-              <button type="button" onClick={() => triggerHiddenAction('export')} className="abhiai-mobile-action-card">
+              <button
+                type="button"
+                onClick={() => triggerHiddenAction('export')}
+                className="abhiai-mobile-action-card"
+              >
                 <Share2 className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                 <span>Export Chat</span>
               </button>
 
-              <button type="button" onClick={() => triggerHiddenAction('voice')} className="abhiai-mobile-action-card">
+              <button
+                type="button"
+                onClick={() => triggerHiddenAction('voice')}
+                className="abhiai-mobile-action-card"
+              >
                 <Radio className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
                 <span>Live Voice</span>
               </button>
             </div>
 
             <div className="mt-3 grid grid-cols-2 gap-2">
-              <Link href="/account" onClick={() => setMoreOpen(false)} className="abhiai-mobile-secondary-card">
+              <Link
+                href="/account"
+                onClick={() => setMoreOpen(false)}
+                className="abhiai-mobile-secondary-card"
+              >
                 <UserRound className="w-4 h-4" />
                 <span>Account & Sync</span>
               </Link>
 
-              <Link href="/admin" onClick={() => setMoreOpen(false)} className="abhiai-mobile-secondary-card">
+              <Link
+                href="/admin"
+                onClick={() => setMoreOpen(false)}
+                className="abhiai-mobile-secondary-card"
+              >
                 <ShieldCheck className="w-4 h-4" />
                 <span>Admin</span>
               </Link>
