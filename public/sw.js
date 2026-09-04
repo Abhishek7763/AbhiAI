@@ -71,12 +71,46 @@ async function staleWhileRevalidate(request) {
   return cached || networkPromise || Response.error();
 }
 
+async function noVisibleClient() {
+  const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+  return !clients.some((client) => client.visibilityState === 'visible');
+}
+
+async function notifyGenerationResponse(response, kind) {
+  if (!response.ok || !(await noVisibleClient())) return;
+
+  try {
+    const data = await response.clone().json();
+    if (data?.error) return;
+    await self.registration.showNotification(kind === 'edit' ? 'AbhiAI image edit is ready' : 'AbhiAI image is ready', {
+      body: kind === 'edit' ? 'Your image edit has completed.' : 'Your image generation has completed.',
+      icon: '/branding/abhiai-app-icon-light-512.png?v=20260904b',
+      badge: '/branding/abhiai-app-icon-light-512.png?v=20260904b',
+      tag: `abhiai-${kind}-complete`,
+      data: { url: '/' },
+      renotify: true,
+    });
+  } catch {
+    // Notification permission may be unavailable or the response may not be JSON.
+  }
+}
+
 self.addEventListener('fetch', (event) => {
   const { request } = event;
-  if (request.method !== 'GET') return;
-
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+
+  if (request.method === 'POST' && (url.pathname === '/api/generate-image' || url.pathname === '/api/edit-image')) {
+    event.respondWith(
+      fetch(request).then((response) => {
+        event.waitUntil(notifyGenerationResponse(response.clone(), url.pathname === '/api/edit-image' ? 'edit' : 'generation'));
+        return response;
+      })
+    );
+    return;
+  }
+
+  if (request.method !== 'GET') return;
   if (url.pathname.startsWith('/api/')) return;
 
   if (request.mode === 'navigate') {
@@ -102,9 +136,7 @@ self.addEventListener('fetch', (event) => {
 });
 
 self.addEventListener('message', (event) => {
-  if (event.data?.type === 'SKIP_WAITING') {
-    self.skipWaiting();
-  }
+  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
 self.addEventListener('push', (event) => {
