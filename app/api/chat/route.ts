@@ -3,6 +3,7 @@ import { getRuntimeInstructions } from "@/lib/ai/runtime-instructions";
 import { resolveRoutePlan, RouteCandidate } from "@/lib/ai/router";
 import { getProviderAdapter } from "@/lib/ai/providers/registry";
 import { getAvailableAgentTools } from "@/lib/ai/tools";
+import { getStoredAgents } from "@/lib/data/admin-config";
 import { logUsageEvent } from "@/lib/usage-logger";
 import { recordRuntimeModelFailure, recordRuntimeModelSuccess } from "@/lib/ai/runtime-health";
 import { withTimeout } from "@/lib/ai/timeout";
@@ -39,7 +40,7 @@ export async function POST(req: Request) {
   if (!guard.ok) return guard.response;
 
   try {
-    const { message, history, modelId, attachments } = await req.json();
+    const { message, history, modelId, attachments, webSearch } = await req.json();
     const userMessage = typeof message === 'string' ? message : '';
     const messageError = validateUserMessage(message);
     if (messageError) {
@@ -55,7 +56,21 @@ export async function POST(req: Request) {
         ))
       : [];
     const safeHistory = sanitizeChatHistory(history);
-    requestedModel = typeof modelId === 'string' && modelId ? modelId : 'default';
+    const requestedRoute = typeof modelId === 'string' && modelId ? modelId : 'default';
+    const webSearchEnabled = webSearch === true;
+
+    let activeAgent: Awaited<ReturnType<typeof getStoredAgents>>[number] | null = null;
+    if (requestedRoute.startsWith('agent:')) {
+      const agentId = requestedRoute.slice('agent:'.length).trim();
+      activeAgent = (await getStoredAgents()).find(
+        (agent) => agent.id === agentId && agent.visibility === 'public',
+      ) ?? null;
+      if (!activeAgent) {
+        return NextResponse.json({ error: 'This AI agent is unavailable.' }, { status: 404 });
+      }
+    }
+
+    requestedModel = activeAgent?.preferredModelOrAlias || requestedRoute;
 
     if (!userMessage && currentAttachments.length === 0) {
       return NextResponse.json({ error: "Message or attachment is required" }, { status: 400 });
@@ -78,7 +93,15 @@ export async function POST(req: Request) {
 
     const globalInstructions = await getRuntimeInstructions();
     const executionChain: RouteCandidate[] = [routePlan.primary, ...routePlan.fallbacks];
-    const availableTools = getAvailableAgentTools({ attachments: currentAttachments });
+    const allowedToolNames = new Set(activeAgent?.allowedTools ?? []);
+    const toolContext = { attachments: currentAttachments };
+    const tools = activeAgent
+      ? getAvailableAgentTools(toolContext).filter((tool) => {
+          if (!allowedToolNames.has(tool.name)) return false;
+          if (tool.name === 'web_search' && !webSearchEnabled) return false;
+          return true;
+        })
+      : [];
 
     let successfulReply: string | null = null;
     let executedCandidate: RouteCandidate | null = null;
@@ -88,20 +111,10 @@ export async function POST(req: Request) {
       const candidateStartedAt = Date.now();
 
       try {
-        const adapter = getProviderAdapter(candidate.providerId, candidate.baseUrl);
-        if (!adapter) {
-          throw new Error(`Adapter for provider ${candidate.providerId} could not be resolved`);
-        }
-        if (!candidate.apiKey) {
-          throw new Error(`No runtime API key is available for ${candidate.name}`);
-        }
-
-        const toolAware = typeof adapter.chatWithTools === 'function' && availableTools.length > 0;
-        const toolInstruction = toolAware
-          ? 'You have access to callable tools. Use web_search for current/time-sensitive facts and document_qa when the answer should come from an attached document. Do not claim a tool was used unless you actually called it.'
-          : '';
-        const combinedPrompt = [globalInstructions, candidate.systemPrompt, toolInstruction].filter(Boolean).join('\n\n');
-        const documentTextAppendix = toolAware
+        const combinedPrompt = [globalInstructions, activeAgent?.systemPrompt, candidate.systemPrompt]
+          .filter(Boolean)
+          .join('\n\n');
+        const documentTextAppendix = tools.some((tool) => tool.name === 'document_qa')
           ? ''
           : formatDocumentsForPrompt(currentAttachments, {
               skipNativePdf: candidate.providerId === 'google',
@@ -112,31 +125,34 @@ export async function POST(req: Request) {
           role: item.role,
           content: item.content,
         }));
-
-        const candidateAttachments = candidate.providerId === 'google'
-          ? currentAttachments.filter((attachment) => isGeminiNativeAttachment(attachment))
-          : [];
-
         chatMessages.push({
           role: 'user',
           content: userEffectiveContent,
-          attachments: candidateAttachments,
+          attachments: candidate.providerId === 'google'
+            ? currentAttachments.filter((attachment) => isGeminiNativeAttachment(attachment))
+            : currentAttachments,
         });
 
-        const providerPromise = toolAware
-          ? adapter.chatWithTools!(
-              candidate.apiKey,
-              candidate.modelId,
-              chatMessages,
-              combinedPrompt,
-              availableTools,
-              { attachments: currentAttachments },
-            )
-          : adapter.chat(candidate.apiKey, candidate.modelId, chatMessages, combinedPrompt);
+        const adapter = getProviderAdapter(candidate.providerId, candidate.baseUrl);
+        if (!adapter) {
+          throw new Error(`Adapter for provider ${candidate.providerId} could not be resolved`);
+        }
+        if (!candidate.apiKey) {
+          throw new Error(`No runtime API key is available for ${candidate.name}`);
+        }
 
         const reply = await withTimeout(
-          providerPromise,
-          toolAware ? TOOL_PROVIDER_TIMEOUT_MS : PROVIDER_TIMEOUT_MS,
+          tools.length > 0 && adapter.chatWithTools
+            ? adapter.chatWithTools(
+                candidate.apiKey,
+                candidate.modelId,
+                chatMessages,
+                combinedPrompt,
+                tools,
+                toolContext,
+              )
+            : adapter.chat(candidate.apiKey, candidate.modelId, chatMessages, combinedPrompt),
+          tools.length > 0 ? TOOL_PROVIDER_TIMEOUT_MS : PROVIDER_TIMEOUT_MS,
           candidate.name,
         );
 
@@ -177,7 +193,7 @@ export async function POST(req: Request) {
     if (successfulReply && executedCandidate) {
       const failoverUsed = executedCandidate.connectionId !== routePlan.primary.connectionId;
       logUsageEvent({
-        modelOrAlias: requestedModel,
+        modelOrAlias: activeAgent ? `agent:${activeAgent.id}` : requestedModel,
         executedModelName: executedCandidate.name,
         executedModelId: executedCandidate.modelId,
         connectionId: executedCandidate.connectionId,
@@ -194,11 +210,13 @@ export async function POST(req: Request) {
         reply: successfulReply,
         model: executedCandidate.name,
         failoverUsed,
+        agentId: activeAgent?.id ?? null,
+        toolsActive: tools.map((tool) => tool.name),
       });
     }
 
     logUsageEvent({
-      modelOrAlias: requestedModel,
+      modelOrAlias: activeAgent ? `agent:${activeAgent.id}` : requestedModel,
       provider: 'all-failed',
       promptLength: userMessage.length,
       responseLength: 0,
