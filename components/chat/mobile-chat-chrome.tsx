@@ -59,10 +59,18 @@ function findWebSearchTrigger() {
   );
 }
 
+function isMobileSidebarOpen() {
+  if (typeof window === 'undefined' || window.innerWidth >= 768) return false;
+  const sidebar = document.querySelector<HTMLElement>('.fixed.inset-y-0.left-0.z-50');
+  if (!sidebar) return false;
+  return !sidebar.classList.contains('-translate-x-full');
+}
+
 export default function MobileChatChrome() {
   const [moreOpen, setMoreOpen] = useState(false);
   const [webSearchActive, setWebSearchActive] = useState(false);
   const [voiceTypingActive, setVoiceTypingActive] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     if (!moreOpen) return;
@@ -72,6 +80,20 @@ export default function MobileChatChrome() {
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
   }, [moreOpen]);
+
+  useEffect(() => {
+    const syncSidebarState = () => setSidebarOpen(isMobileSidebarOpen());
+    syncSidebarState();
+
+    const observer = new MutationObserver(syncSidebarState);
+    observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
+    window.addEventListener('resize', syncSidebarState);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', syncSidebarState);
+    };
+  }, []);
 
   useEffect(() => {
     const handleChatSubmit = (event: SubmitEvent) => {
@@ -110,6 +132,7 @@ export default function MobileChatChrome() {
 
   const openSidebar = () => {
     const trigger = document.querySelector<HTMLButtonElement>('button[aria-label="Open Navigation"]');
+    setSidebarOpen(true);
     trigger?.click();
   };
 
@@ -162,6 +185,8 @@ export default function MobileChatChrome() {
     setVoiceTypingActive((value) => !value);
   };
 
+  const dockHidden = sidebarOpen || moreOpen;
+
   return (
     <>
       <style jsx global>{`
@@ -174,19 +199,30 @@ export default function MobileChatChrome() {
 
         .abhiai-shared-tools-dock {
           position: fixed;
-          z-index: 160 !important;
-          left: 50%;
+          z-index: 40 !important;
+          left: calc(50% + 9rem);
           transform: translateX(-50%);
           bottom: 5.7rem;
-          width: min(calc(100vw - 2rem), 72rem);
+          width: min(calc(100vw - 20rem), 72rem);
           touch-action: manipulation;
           overflow: visible !important;
+          transition: opacity 160ms ease, transform 160ms ease;
+        }
+
+        .abhiai-shared-tools-dock[data-hidden="true"] {
+          opacity: 0 !important;
+          pointer-events: none !important;
+          transform: translateX(-50%) translateY(0.4rem);
+        }
+
+        .abhiai-shared-tools-dock[data-hidden="true"] * {
+          pointer-events: none !important;
         }
 
         .abhiai-shared-compact-tools {
           display: flex;
           align-items: center;
-          gap: 0.38rem;
+          gap: 0.5rem;
           width: max-content;
           max-width: 100%;
           padding: 0.16rem;
@@ -211,18 +247,19 @@ export default function MobileChatChrome() {
           max-width: 10rem;
           flex: 0 1 auto;
           position: relative;
-          z-index: 180;
+          z-index: 60;
           overflow: visible !important;
+          margin-right: 0.12rem;
         }
 
         .abhiai-shared-compact-tools [data-abhiai-model-selector="dock"] {
           position: relative !important;
-          z-index: 185 !important;
+          z-index: 65 !important;
           overflow: visible !important;
         }
 
         .abhiai-shared-compact-tools [data-abhiai-model-selector="dock"] > div[role="menu"] {
-          z-index: 220 !important;
+          z-index: 90 !important;
         }
 
         .abhiai-shared-compact-tool {
@@ -241,7 +278,7 @@ export default function MobileChatChrome() {
           cursor: pointer;
           touch-action: manipulation;
           position: relative;
-          z-index: 165;
+          z-index: 45;
         }
 
         .dark .abhiai-shared-compact-tool {
@@ -278,9 +315,6 @@ export default function MobileChatChrome() {
           background: rgb(239 246 255 / 0.98);
         }
 
-        /* The shared compact toolbar owns these controls now. Keep the original
-           composer controls mounted for the proxy actions, but do not render
-           duplicate visual controls on either mobile or desktop. */
         .chat-composer-shell > div > div:first-child,
         .chat-composer-shell button[title="Voice Dictation"],
         .chat-composer-shell button[title="Stop Listening"] {
@@ -294,11 +328,17 @@ export default function MobileChatChrome() {
             transform: none;
             bottom: 5.35rem;
             width: auto;
+            z-index: 40 !important;
+          }
+
+          .abhiai-shared-tools-dock[data-hidden="true"] {
+            transform: translateY(0.4rem);
           }
 
           .abhiai-shared-compact-tools {
             width: max-content;
             max-width: calc(100vw - 1.1rem);
+            gap: 0.44rem;
             overflow: visible !important;
             padding: 0.05rem;
             background: transparent;
@@ -309,6 +349,7 @@ export default function MobileChatChrome() {
 
           .abhiai-shared-compact-tools > :first-child {
             max-width: 7.9rem;
+            margin-right: 0.14rem;
           }
 
           .chat-composer-shell {
@@ -380,7 +421,7 @@ export default function MobileChatChrome() {
         </div>
       </div>
 
-      <div className="abhiai-shared-tools-dock" aria-label="AbhiAI quick tools">
+      <div className="abhiai-shared-tools-dock" data-hidden={dockHidden} aria-hidden={dockHidden} aria-label="AbhiAI quick tools">
         <div className="abhiai-shared-compact-tools">
           <ModelSelector variant="dock" />
           <button
@@ -449,9 +490,7 @@ export default function MobileChatChrome() {
                   <AbhiLogo variant="icon" size="sm" href="" />
                   <div>
                     <h2 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Quick actions</h2>
-                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                      Full controls and settings
-                    </p>
+                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400">Full controls and settings</p>
                   </div>
                 </div>
               </div>
@@ -466,58 +505,34 @@ export default function MobileChatChrome() {
             </div>
 
             <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => triggerHiddenAction('agent')}
-                className="abhiai-mobile-action-card"
-              >
+              <button type="button" onClick={() => triggerHiddenAction('agent')} className="abhiai-mobile-action-card">
                 <Bot className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                 <span>Agents</span>
               </button>
 
-              <button
-                type="button"
-                onClick={() => triggerHiddenAction('image')}
-                className="abhiai-mobile-action-card"
-              >
+              <button type="button" onClick={() => triggerHiddenAction('image')} className="abhiai-mobile-action-card">
                 <ImageIcon className="w-4 h-4 text-violet-600 dark:text-violet-400" />
                 <span>Image Studio</span>
               </button>
 
-              <button
-                type="button"
-                onClick={() => triggerHiddenAction('export')}
-                className="abhiai-mobile-action-card"
-              >
+              <button type="button" onClick={() => triggerHiddenAction('export')} className="abhiai-mobile-action-card">
                 <Share2 className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                 <span>Export Chat</span>
               </button>
 
-              <button
-                type="button"
-                onClick={() => triggerHiddenAction('voice')}
-                className="abhiai-mobile-action-card"
-              >
+              <button type="button" onClick={() => triggerHiddenAction('voice')} className="abhiai-mobile-action-card">
                 <Radio className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
                 <span>Live Voice</span>
               </button>
             </div>
 
             <div className="mt-3 grid grid-cols-2 gap-2">
-              <Link
-                href="/account"
-                onClick={() => setMoreOpen(false)}
-                className="abhiai-mobile-secondary-card"
-              >
+              <Link href="/account" onClick={() => setMoreOpen(false)} className="abhiai-mobile-secondary-card">
                 <UserRound className="w-4 h-4" />
                 <span>Account & Sync</span>
               </Link>
 
-              <Link
-                href="/admin"
-                onClick={() => setMoreOpen(false)}
-                className="abhiai-mobile-secondary-card"
-              >
+              <Link href="/admin" onClick={() => setMoreOpen(false)} className="abhiai-mobile-secondary-card">
                 <ShieldCheck className="w-4 h-4" />
                 <span>Admin</span>
               </Link>
