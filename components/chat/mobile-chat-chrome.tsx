@@ -41,8 +41,6 @@ function findImageStudioTrigger() {
 
 export default function MobileChatChrome() {
   const [moreOpen, setMoreOpen] = useState(false);
-  // Phase 6 promotes Image Studio to a public first-class feature. Do not hide
-  // mobile access behind the older rollout flag anymore.
   const imageStudioEnabled = true;
   const liveVoiceEnabled = process.env.NEXT_PUBLIC_ENABLE_LIVE_VOICE === 'true';
 
@@ -140,16 +138,6 @@ export default function MobileChatChrome() {
         </div>
 
         <div className="abhiai-mobile-actions">
-          <button
-            type="button"
-            onClick={() => triggerHiddenAction('image')}
-            className="h-9 px-2.5 rounded-xl inline-flex items-center gap-1.5 border border-violet-200/80 dark:border-violet-800/70 bg-violet-50/90 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300 text-xs font-semibold shadow-xs active:scale-95 transition-all"
-            aria-label="Open Image Studio"
-            title="Create Image"
-          >
-            <ImageIcon className="w-4 h-4" />
-            <span className="hidden min-[360px]:inline">Image</span>
-          </button>
           <AccountMenu />
           <button
             type="button"
@@ -164,7 +152,27 @@ export default function MobileChatChrome() {
       </div>
 
       <div className="abhiai-mobile-model-dock md:hidden">
-        <ModelSelector variant="dock" />
+        <div className="abhiai-mobile-compact-tools">
+          <ModelSelector variant="dock" />
+          <button
+            type="button"
+            onClick={() => triggerHiddenAction('image')}
+            className="abhiai-mobile-compact-tool"
+            aria-label="Create image"
+            title="Create Image"
+          >
+            <ImageIcon className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => triggerHiddenAction('voice')}
+            className="abhiai-mobile-compact-tool"
+            aria-label="Start Voice Agent"
+            title="Voice Agent"
+          >
+            <Radio className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {moreOpen && (
