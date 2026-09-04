@@ -5,6 +5,8 @@ import { getProviderAdapter } from "@/lib/ai/providers/registry";
 import { getAvailableAgentTools } from "@/lib/ai/tools";
 import { executeAgentTool } from "@/lib/ai/tool-executor";
 import { getStoredAgents } from "@/lib/data/admin-config";
+import { getRoutingConfig } from "@/lib/data/routing-config";
+import { classifyFailoverError } from "@/lib/ai/failover";
 import { logUsageEvent } from "@/lib/usage-logger";
 import { recordRuntimeModelFailure, recordRuntimeModelSuccess } from "@/lib/ai/runtime-health";
 import { withTimeout } from "@/lib/ai/timeout";
@@ -20,7 +22,6 @@ import {
 
 export const maxDuration = 180;
 
-const PROVIDER_TIMEOUT_MS = 35_000;
 const TOOL_PROVIDER_TIMEOUT_MS = 90_000;
 const RUNTIME_HEALTH_WRITE_TIMEOUT_MS = 2_500;
 
@@ -83,7 +84,10 @@ export async function POST(req: Request) {
     }
 
     const requiresNativeMultimodal = currentAttachments.some((attachment) => isGeminiNativeAttachment(attachment));
-    const routePlan = await resolveRoutePlan(requestedModel, requiresNativeMultimodal, userMessage);
+    const [routePlan, routingConfig] = await Promise.all([
+      resolveRoutePlan(requestedModel, requiresNativeMultimodal, userMessage),
+      getRoutingConfig(),
+    ]);
 
     if (!routePlan.primary) {
       return NextResponse.json(
@@ -93,7 +97,8 @@ export async function POST(req: Request) {
     }
 
     const globalInstructions = await getRuntimeInstructions();
-    const executionChain: RouteCandidate[] = [routePlan.primary, ...routePlan.fallbacks];
+    const executionChain: RouteCandidate[] = [routePlan.primary, ...routePlan.fallbacks]
+      .slice(0, routingConfig.maxAttempts);
     const allowedToolNames = new Set(activeAgent?.allowedTools ?? []);
     const toolExecutionContext = {
       attachments: currentAttachments,
@@ -115,9 +120,11 @@ export async function POST(req: Request) {
 
     let successfulReply: string | null = null;
     let executedCandidate: RouteCandidate | null = null;
+    let attemptsUsed = 0;
 
     for (const candidate of executionChain) {
       if (req.signal.aborted) break;
+      attemptsUsed += 1;
       const candidateStartedAt = Date.now();
 
       try {
@@ -150,10 +157,16 @@ export async function POST(req: Request) {
         if (!candidate.apiKey) {
           throw new Error(`No runtime API key is available for ${candidate.name}`);
         }
+        if (tools.length > 0 && !adapter.chatWithTools) {
+          throw new Error(`Unsupported capability: tool calling is required for ${candidate.name}`);
+        }
 
+        const providerTimeoutMs = tools.length > 0
+          ? Math.max(routingConfig.providerTimeoutMs, TOOL_PROVIDER_TIMEOUT_MS)
+          : routingConfig.providerTimeoutMs;
         const reply = await withTimeout(
-          tools.length > 0 && adapter.chatWithTools
-            ? adapter.chatWithTools(
+          tools.length > 0
+            ? adapter.chatWithTools!(
                 candidate.apiKey,
                 candidate.modelId,
                 chatMessages,
@@ -162,7 +175,7 @@ export async function POST(req: Request) {
                 toolContext,
               )
             : adapter.chat(candidate.apiKey, candidate.modelId, chatMessages, combinedPrompt),
-          tools.length > 0 ? TOOL_PROVIDER_TIMEOUT_MS : PROVIDER_TIMEOUT_MS,
+          providerTimeoutMs,
           candidate.name,
         );
 
@@ -180,19 +193,29 @@ export async function POST(req: Request) {
           executedCandidate = candidate;
           break;
         }
+
+        throw new Error(`Provider ${candidate.name} returned an empty response`);
       } catch (error) {
         if (req.signal.aborted || isClientAbort(error)) break;
 
-        await withTimeout(
-          recordRuntimeModelFailure(candidate.connectionId, error),
-          RUNTIME_HEALTH_WRITE_TIMEOUT_MS,
-          'Runtime health update',
-        ).catch((healthError) => {
-          logger.warn('Could not record failed runtime health state.', healthError);
-        });
+        const failoverDecision = classifyFailoverError(error);
+        if (failoverDecision.kind !== 'capability') {
+          await withTimeout(
+            recordRuntimeModelFailure(candidate.connectionId, error),
+            RUNTIME_HEALTH_WRITE_TIMEOUT_MS,
+            'Runtime health update',
+          ).catch((healthError) => {
+            logger.warn('Could not record failed runtime health state.', healthError);
+          });
+        }
 
         const message = error instanceof Error ? error.message : String(error || 'Unknown provider error');
-        logger.warn(`Failover execution failed on ${candidate.name} (${candidate.modelId}).`, message);
+        logger.warn(
+          `Failover attempt ${attemptsUsed}/${executionChain.length} failed on ${candidate.name} (${candidate.modelId}) [${failoverDecision.kind}].`,
+          message,
+        );
+
+        if (!failoverDecision.retryable) break;
       }
     }
 
@@ -220,6 +243,7 @@ export async function POST(req: Request) {
         reply: successfulReply,
         model: executedCandidate.name,
         failoverUsed,
+        attemptsUsed,
         agentId: activeAgent?.id ?? null,
         toolsActive: tools.map((tool) => tool.name),
       });
@@ -231,7 +255,7 @@ export async function POST(req: Request) {
       promptLength: userMessage.length,
       responseLength: 0,
       durationMs: Date.now() - startTime,
-      failoverUsed: true,
+      failoverUsed: attemptsUsed > 1,
       isPublic: true,
       status: 'error',
       errorCode: 'ALL_CANDIDATES_FAILED',
