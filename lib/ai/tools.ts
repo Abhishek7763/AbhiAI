@@ -1,0 +1,152 @@
+import { fetchWebGroundingContext } from '@/lib/ai/web-search';
+import { extractDocumentText, isImageAttachment, type AttachmentPayload } from '@/lib/files/document-extractor';
+
+export type AgentToolName = 'web_search' | 'document_qa';
+
+export interface AgentToolDefinition {
+  name: AgentToolName;
+  description: string;
+  parameters: Record<string, unknown>;
+}
+
+export interface AgentToolContext {
+  attachments?: AttachmentPayload[];
+}
+
+export interface AgentToolResult {
+  ok: boolean;
+  output?: unknown;
+  error?: string;
+}
+
+export const AGENT_TOOL_DEFINITIONS: AgentToolDefinition[] = [
+  {
+    name: 'web_search',
+    description: 'Search the live web for current or time-sensitive factual information. Use this when the answer may have changed or the user explicitly asks for current information.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'A concise search query containing the key entities and facts needed.',
+        },
+      },
+      required: ['query'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'document_qa',
+    description: 'Search the user-attached documents for passages relevant to a specific question. Use this instead of guessing when the answer should come from an attachment.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'The question or topic to find in the attached documents.',
+        },
+      },
+      required: ['query'],
+      additionalProperties: false,
+    },
+  },
+];
+
+function normalizeQueryWords(query: string) {
+  return new Set(
+    query
+      .toLowerCase()
+      .replace(/[^a-z0-9\u0900-\u097f\s]/gi, ' ')
+      .split(/\s+/)
+      .filter((word) => word.length >= 3),
+  );
+}
+
+function scoreChunk(chunk: string, queryWords: Set<string>) {
+  const lower = chunk.toLowerCase();
+  let score = 0;
+  for (const word of queryWords) {
+    if (lower.includes(word)) score += 1;
+  }
+  return score;
+}
+
+function buildDocumentAnswerContext(query: string, attachments: AttachmentPayload[]) {
+  const queryWords = normalizeQueryWords(query);
+  const candidates: Array<{ name: string; chunk: string; score: number }> = [];
+
+  for (const attachment of attachments) {
+    if (isImageAttachment(attachment)) continue;
+    const extracted = extractDocumentText(attachment);
+    const chunks = extracted.text
+      .split(/\n{2,}|(?<=[.!?])\s+(?=[A-Z0-9\u0900-\u097f])/)
+      .map((chunk) => chunk.trim())
+      .filter((chunk) => chunk.length >= 40);
+
+    for (const chunk of chunks) {
+      candidates.push({
+        name: extracted.name,
+        chunk: chunk.slice(0, 2200),
+        score: scoreChunk(chunk, queryWords),
+      });
+    }
+  }
+
+  const ranked = candidates
+    .sort((a, b) => b.score - a.score || b.chunk.length - a.chunk.length)
+    .slice(0, 8);
+
+  return ranked.map((item, index) => ({
+    rank: index + 1,
+    document: item.name,
+    relevanceScore: item.score,
+    passage: item.chunk,
+  }));
+}
+
+export function getAvailableAgentTools(context: AgentToolContext): AgentToolDefinition[] {
+  const hasDocuments = (context.attachments ?? []).some((attachment) => !isImageAttachment(attachment));
+  return AGENT_TOOL_DEFINITIONS.filter((tool) => tool.name !== 'document_qa' || hasDocuments);
+}
+
+export async function executeAgentTool(
+  name: string,
+  args: Record<string, unknown> | undefined,
+  context: AgentToolContext,
+): Promise<AgentToolResult> {
+  const query = typeof args?.query === 'string' ? args.query.trim().slice(0, 500) : '';
+  if (!query) return { ok: false, error: 'A non-empty query is required.' };
+
+  if (name === 'web_search') {
+    const result = await fetchWebGroundingContext(query);
+    if (!result.contextText) {
+      return { ok: false, error: 'No useful live web results were found for this query.' };
+    }
+    return {
+      ok: true,
+      output: {
+        query,
+        context: result.contextText,
+        sources: result.sources,
+      },
+    };
+  }
+
+  if (name === 'document_qa') {
+    const attachments = context.attachments ?? [];
+    const passages = buildDocumentAnswerContext(query, attachments);
+    if (passages.length === 0) {
+      return { ok: false, error: 'No searchable text passages were available in the attached documents.' };
+    }
+    return {
+      ok: true,
+      output: {
+        query,
+        passages,
+        instruction: 'Answer from these passages only when the user asked about the attached documents. If the passages do not support the answer, say so.',
+      },
+    };
+  }
+
+  return { ok: false, error: `Unknown tool: ${name}` };
+}
