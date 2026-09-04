@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Camera, ClipboardPaste } from 'lucide-react';
 
@@ -113,32 +113,20 @@ async function optimizeImage(file: File) {
 }
 
 export default function ImageAttachmentBridge() {
-  const [mounted, setMounted] = useState(false);
   const [anchor, setAnchor] = useState<Anchor | null>(null);
   const [previews, setPreviews] = useState<PreviewItem[]>([]);
   const [notice, setNotice] = useState('');
   const previewUrls = useRef(new Set<string>());
   const noticeTimer = useRef<number | null>(null);
 
-  const showNotice = (message: string) => {
+  const showNotice = useCallback((message: string) => {
     setNotice(message);
     if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
     noticeTimer.current = window.setTimeout(() => setNotice(''), 2600);
-  };
-
-  useEffect(() => {
-    setMounted(true);
-    return () => {
-      setMounted(false);
-      if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
-      previewUrls.current.forEach((url) => URL.revokeObjectURL(url));
-      previewUrls.current.clear();
-    };
   }, []);
 
   useEffect(() => {
-    if (!mounted) return;
-
+    const urls = previewUrls.current;
     let input: HTMLInputElement | null = null;
     let form: HTMLFormElement | null = null;
     let mutationObserver: MutationObserver | null = null;
@@ -158,7 +146,7 @@ export default function ImageAttachmentBridge() {
         setPreviews((items) => {
           for (const item of items) {
             URL.revokeObjectURL(item.url);
-            previewUrls.current.delete(item.url);
+            urls.delete(item.url);
           }
           return [];
         });
@@ -169,7 +157,7 @@ export default function ImageAttachmentBridge() {
         const keep = activeNames.has(item.name);
         if (!keep) {
           URL.revokeObjectURL(item.url);
-          previewUrls.current.delete(item.url);
+          urls.delete(item.url);
         }
         return keep;
       }));
@@ -186,7 +174,7 @@ export default function ImageAttachmentBridge() {
           const key = `${file.name}:${file.size}:${file.lastModified}`;
           if (existingKeys.has(key)) continue;
           const url = URL.createObjectURL(file);
-          previewUrls.current.add(url);
+          urls.add(url);
           existingKeys.add(key);
           next.push({ key, name: file.name, url });
         }
@@ -246,7 +234,7 @@ export default function ImageAttachmentBridge() {
     const onPaste = (event: ClipboardEvent) => {
       const clipboardFiles = Array.from(event.clipboardData?.files ?? [])
         .filter((file) => file.type.startsWith('image/'))
-        .map(normalizePastedFile);
+        .map((file, index) => normalizePastedFile(file, index));
       if (clipboardFiles.length === 0) return;
 
       event.preventDefault();
@@ -278,7 +266,7 @@ export default function ImageAttachmentBridge() {
       updateAnchor();
     };
 
-    connect();
+    retryTimer = window.setTimeout(connect, 0);
 
     return () => {
       if (retryTimer) window.clearTimeout(retryTimer);
@@ -289,8 +277,11 @@ export default function ImageAttachmentBridge() {
       window.visualViewport?.removeEventListener('scroll', updateAnchor);
       mutationObserver?.disconnect();
       resizeObserver?.disconnect();
+      if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
+      urls.forEach((url) => URL.revokeObjectURL(url));
+      urls.clear();
     };
-  }, [mounted]);
+  }, [showNotice]);
 
   const cameraStyle = useMemo(() => {
     if (!anchor) return undefined;
@@ -337,7 +328,7 @@ export default function ImageAttachmentBridge() {
     input.click();
   };
 
-  if (!mounted || !anchor) return null;
+  if (!anchor || typeof document === 'undefined') return null;
 
   return createPortal(
     <>

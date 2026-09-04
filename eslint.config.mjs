@@ -14,6 +14,7 @@ export default defineConfig([
     files: [
       "components/chat-application.tsx",
       "components/image-gen/image-generator-modal.tsx",
+      "app/admin/(dashboard)/chat/page.tsx",
     ],
     rules: {
       "react-hooks/set-state-in-effect": "off",
