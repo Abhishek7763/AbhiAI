@@ -117,6 +117,7 @@ export async function POST(req: NextRequest) {
     }
 
     requestedModel = activeAgent?.preferredModelOrAlias || requestedRoute;
+    const effectiveHistory = activeAgent?.memoryEnabled === false ? [] : safeHistory;
 
     if (!userMessage && currentAttachments.length === 0) {
       return new Response(JSON.stringify({ error: "Message or attachment is required" }), {
@@ -145,15 +146,20 @@ export async function POST(req: NextRequest) {
 
     const executionChain: RouteCandidate[] = [routePlan.primary, ...routePlan.fallbacks];
     const allowedToolNames = new Set(activeAgent?.allowedTools ?? []);
-    const agentToolContext = { attachments: currentAttachments };
+    const agentToolContext = {
+      attachments: currentAttachments,
+      userId: guard.userId,
+      imageSettings: guard.settings,
+      runtime: activeAgent ? {
+        temperature: activeAgent.temperature,
+        maxTokens: activeAgent.maxTokens,
+      } : undefined,
+    };
     const agentTools = activeAgent
-      ? getAvailableAgentTools(agentToolContext).filter((tool) => {
-          if (!allowedToolNames.has(tool.name)) return false;
-          if (tool.name === 'web_search' && !webSearchEnabled) return false;
-          return true;
-        })
+      ? getAvailableAgentTools(agentToolContext).filter((tool) => allowedToolNames.has(tool.name))
       : [];
     const agentToolWorkflowActive = agentTools.length > 0;
+    const automaticAgentWebSearch = agentTools.some((tool) => tool.name === 'web_search');
 
     let fallbackWebContext = '';
     let fallbackWebSources: SearchResult[] = [];
@@ -220,21 +226,21 @@ export async function POST(req: NextRequest) {
               : '';
             const userEffectiveContent = (userMessage || 'Please review the attached content.') + documentTextAppendix;
 
-            const chatMessages: any[] = safeHistory.map((item) => ({
+            const chatMessages: any[] = effectiveHistory.map((item) => ({
               role: item.role,
               content: item.content,
             }));
             chatMessages.push({
               role: 'user',
               content: userEffectiveContent,
-              attachments: candidate.providerId === 'google' ? currentAttachments : currentAttachments,
+              attachments: currentAttachments,
             });
 
             if (!emit({
               type: 'meta',
               modelName: candidate.name,
               failoverUsed: failoverHappened,
-              webSearchActive: webSearchEnabled,
+              webSearchActive: webSearchEnabled || automaticAgentWebSearch,
               agentId: activeAgent?.id ?? null,
               toolsActive: agentToolWorkflowActive ? agentTools.map((tool) => tool.name) : [],
             })) {
@@ -269,10 +275,16 @@ export async function POST(req: NextRequest) {
               if (!emit({ type: 'delta', text: reply })) throw new Error('CLIENT_ABORTED');
             } else if (candidate.providerId === 'google') {
               const ai = new GoogleGenAI({ apiKey: candidate.apiKey });
-              const geminiConfig: any = { systemInstruction: combinedPrompt };
+              const geminiConfig: any = {
+                systemInstruction: combinedPrompt,
+                ...(activeAgent ? {
+                  temperature: activeAgent.temperature,
+                  maxOutputTokens: activeAgent.maxTokens,
+                } : {}),
+              };
               if (webSearchEnabled) geminiConfig.tools = [{ googleSearch: {} }];
 
-              const geminiContents: any[] = safeHistory.map((item) => ({
+              const geminiContents: any[] = effectiveHistory.map((item) => ({
                 role: item.role === 'assistant' ? 'model' : 'user',
                 parts: [{ text: item.content }],
               }));
@@ -344,6 +356,10 @@ export async function POST(req: NextRequest) {
                 combinedPrompt,
                 undefined,
                 req.signal,
+                activeAgent ? {
+                  temperature: activeAgent.temperature,
+                  maxTokens: activeAgent.maxTokens,
+                } : undefined,
               );
 
               for await (const deltaText of withStreamTimeout(streamGen, {

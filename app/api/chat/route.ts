@@ -71,6 +71,7 @@ export async function POST(req: Request) {
     }
 
     requestedModel = activeAgent?.preferredModelOrAlias || requestedRoute;
+    const effectiveHistory = activeAgent?.memoryEnabled === false ? [] : safeHistory;
 
     if (!userMessage && currentAttachments.length === 0) {
       return NextResponse.json({ error: "Message or attachment is required" }, { status: 400 });
@@ -94,13 +95,17 @@ export async function POST(req: Request) {
     const globalInstructions = await getRuntimeInstructions();
     const executionChain: RouteCandidate[] = [routePlan.primary, ...routePlan.fallbacks];
     const allowedToolNames = new Set(activeAgent?.allowedTools ?? []);
-    const toolContext = { attachments: currentAttachments };
+    const toolContext = {
+      attachments: currentAttachments,
+      userId: guard.userId,
+      imageSettings: guard.settings,
+      runtime: activeAgent ? {
+        temperature: activeAgent.temperature,
+        maxTokens: activeAgent.maxTokens,
+      } : undefined,
+    };
     const tools = activeAgent
-      ? getAvailableAgentTools(toolContext).filter((tool) => {
-          if (!allowedToolNames.has(tool.name)) return false;
-          if (tool.name === 'web_search' && !webSearchEnabled) return false;
-          return true;
-        })
+      ? getAvailableAgentTools(toolContext).filter((tool) => allowedToolNames.has(tool.name))
       : [];
 
     let successfulReply: string | null = null;
@@ -121,7 +126,7 @@ export async function POST(req: Request) {
             });
         const userEffectiveContent = (userMessage || 'Please review the attached content.') + documentTextAppendix;
 
-        const chatMessages: any[] = safeHistory.map((item) => ({
+        const chatMessages: any[] = effectiveHistory.map((item) => ({
           role: item.role,
           content: item.content,
         }));

@@ -178,6 +178,9 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
   ): Promise<string> {
     if (tools.length === 0) return this.chat(apiKey, modelId, messages, systemPrompt);
 
+    const runtime = (context as AgentToolContext & { runtime?: { temperature?: number; maxTokens?: number } }).runtime;
+    const temperature = runtime?.temperature ?? 0.7;
+    const tokenLimit = runtime?.maxTokens;
     const conversation: any[] = this.formatMessages(messages, systemPrompt);
     const toolPayload = tools.map((tool) => ({
       type: 'function',
@@ -197,7 +200,8 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
           messages: conversation,
           tools: toolPayload,
           tool_choice: 'auto',
-          temperature: 0.7,
+          temperature,
+          ...(tokenLimit ? { max_tokens: tokenLimit } : {}),
         }),
         signal: AbortSignal.timeout(60000),
       });
@@ -244,7 +248,12 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
     const finalRes = await fetch(this.chatEndpoint, {
       method: 'POST',
       headers: this.getHeaders(apiKey),
-      body: JSON.stringify({ model: modelId, messages: conversation, temperature: 0.7 }),
+      body: JSON.stringify({
+        model: modelId,
+        messages: conversation,
+        temperature,
+        ...(tokenLimit ? { max_tokens: tokenLimit } : {}),
+      }),
       signal: AbortSignal.timeout(60000),
     });
     if (!finalRes.ok) throw new Error(`Provider finalization failed (${finalRes.status}).`);

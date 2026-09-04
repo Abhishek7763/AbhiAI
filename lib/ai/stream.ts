@@ -7,6 +7,11 @@ export interface StreamChunk {
   error?: string;
 }
 
+export interface StreamRuntimeOptions {
+  temperature?: number;
+  maxTokens?: number;
+}
+
 const OPENAI_STREAM_FIRST_RESPONSE_MS = 25_000;
 const OPENAI_STREAM_IDLE_MS = 30_000;
 const OPENAI_STREAM_TOTAL_MS = 90_000;
@@ -19,6 +24,7 @@ export async function* streamOpenAICompatible(
   systemPrompt?: string,
   customHeaders?: Record<string, string>,
   externalSignal?: AbortSignal,
+  runtime?: StreamRuntimeOptions,
 ): AsyncGenerator<string, void, unknown> {
   const formattedMessages: any[] = [];
   if (systemPrompt) {
@@ -78,7 +84,8 @@ export async function* streamOpenAICompatible(
       body: JSON.stringify({
         model: modelId,
         messages: formattedMessages,
-        temperature: 0.7,
+        temperature: runtime?.temperature ?? 0.7,
+        ...(runtime?.maxTokens ? { max_tokens: runtime.maxTokens } : {}),
         stream: true,
       }),
       signal: controller.signal,

@@ -155,6 +155,7 @@ export class GoogleProvider implements ProviderAdapter {
   ): Promise<string> {
     if (tools.length === 0) return this.chat(apiKey, modelId, messages, systemPrompt);
 
+    const runtime = (context as AgentToolContext & { runtime?: { temperature?: number; maxTokens?: number } }).runtime;
     const ai = new GoogleGenAI({ apiKey });
     const history = messages.slice(0, -1).map(toGoogleContent);
     const currentMessage = messages.at(-1) ?? { role: 'user' as const, content: ' ' };
@@ -165,6 +166,8 @@ export class GoogleProvider implements ProviderAdapter {
         history,
         config: {
           ...(systemPrompt ? { systemInstruction: systemPrompt } : {}),
+          ...(runtime?.temperature !== undefined ? { temperature: runtime.temperature } : {}),
+          ...(runtime?.maxTokens ? { maxOutputTokens: runtime.maxTokens } : {}),
           tools: [{
             functionDeclarations: tools.map((tool) => ({
               name: tool.name,
