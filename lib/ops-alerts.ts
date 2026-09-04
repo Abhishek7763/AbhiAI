@@ -3,6 +3,12 @@ import 'server-only';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { logger } from '@/lib/logger';
 
+interface AlertEntry {
+  provider: string;
+  connectionId?: string;
+  status: 'success' | 'error';
+}
+
 interface AlertContext {
   providerRecordId: string | null;
   apiKeyRecordId: string | null;
@@ -32,6 +38,44 @@ async function sendWebhook(payload: Record<string, unknown>) {
     logger.warn('Ops alert webhook failed.', error);
     return false;
   }
+}
+
+async function resolveAlertContext(entry: AlertEntry): Promise<AlertContext> {
+  const supabase = createAdminClient();
+  let providerRecordId: string | null = null;
+  let apiKeyRecordId: string | null = null;
+
+  if (entry.connectionId) {
+    const { data: model, error } = await supabase
+      .from('ai_models')
+      .select('provider_id, ai_providers(ai_api_keys(id, status, priority))')
+      .eq('id', entry.connectionId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (model) {
+      providerRecordId = model.provider_id;
+      const keys = ((model as any).ai_providers?.ai_api_keys ?? [])
+        .filter((key: any) => key.status === 'active')
+        .sort((a: any, b: any) => (a.priority ?? 100) - (b.priority ?? 100));
+      apiKeyRecordId = keys[0]?.id ?? null;
+    }
+  } else if (entry.provider && !['all-failed', 'unknown'].includes(entry.provider)) {
+    const { data: provider, error } = await supabase
+      .from('ai_providers')
+      .select('id, ai_api_keys(id, status, priority)')
+      .eq('slug', entry.provider)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (provider) {
+      providerRecordId = provider.id;
+      const keys = ((provider as any).ai_api_keys ?? [])
+        .filter((key: any) => key.status === 'active')
+        .sort((a: any, b: any) => (a.priority ?? 100) - (b.priority ?? 100));
+      apiKeyRecordId = keys[0]?.id ?? null;
+    }
+  }
+
+  return { providerRecordId, apiKeyRecordId };
 }
 
 async function recordAlert(args: {
@@ -138,10 +182,11 @@ async function evaluateKeyQuota(apiKeyId: string) {
   });
 }
 
-export async function evaluateOpsAlerts(context: AlertContext, status: 'success' | 'error') {
+export async function evaluateOpsAlerts(entry: AlertEntry) {
   try {
+    const context = await resolveAlertContext(entry);
     const checks: Promise<void>[] = [];
-    if (status === 'error' && context.providerRecordId) checks.push(evaluateProviderFailures(context.providerRecordId));
+    if (entry.status === 'error' && context.providerRecordId) checks.push(evaluateProviderFailures(context.providerRecordId));
     if (context.apiKeyRecordId) checks.push(evaluateKeyQuota(context.apiKeyRecordId));
     await Promise.all(checks);
   } catch (error) {
