@@ -150,19 +150,24 @@ export default function HealthCenterPage() {
 }
 
 function MetricCard({ label, value, tone }: { label: string; value: number; tone: 'healthy' | 'warning' | 'error' }) {
-  const styles = tone === 'healthy'
-    ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50'
+  const valueClass = tone === 'healthy'
+    ? 'text-emerald-600 dark:text-emerald-400'
     : tone === 'warning'
-      ? 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50'
-      : 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/50';
+      ? 'text-amber-600 dark:text-amber-400'
+      : 'text-red-600 dark:text-red-400';
+  const iconClass = tone === 'healthy'
+    ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400'
+    : tone === 'warning'
+      ? 'bg-amber-50 text-amber-600 dark:bg-amber-950/50 dark:text-amber-400'
+      : 'bg-red-50 text-red-600 dark:bg-red-950/50 dark:text-red-400';
   const Icon = tone === 'healthy' ? CheckCircle : tone === 'warning' ? AlertTriangle : XCircle;
   return (
     <div className="flex items-center justify-between rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
       <div>
         <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">{label}</span>
-        <div className={`mt-1 text-2xl font-bold ${styles.split(' ').slice(0, 2).join(' ')}`}>{value}</div>
+        <div className={`mt-1 text-2xl font-bold ${valueClass}`}>{value}</div>
       </div>
-      <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${styles}`}>
+      <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${iconClass}`}>
         <Icon className="h-5 w-5" />
       </div>
     </div>
@@ -203,9 +208,9 @@ function HealthCard({ item }: { item: HealthItem }) {
         <Info label="Consecutive failures" value={String(item.runtime?.consecutiveFailures ?? 0)} />
       </div>
 
-      {item.runtime?.cooldownUntil && new Date(item.runtime.cooldownUntil).getTime() > Date.now() && (
+      {item.runtime?.cooldownUntil && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">
-          Temporarily cooling down until {formatTime(item.runtime.cooldownUntil)}. Smart Routing will prefer another healthy model.
+          Runtime cooldown recorded until {formatTime(item.runtime.cooldownUntil)}. Smart Routing avoids the model while that cooldown is active.
         </div>
       )}
 
