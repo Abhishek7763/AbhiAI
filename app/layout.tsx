@@ -24,6 +24,8 @@ const spaceGrotesk = Space_Grotesk({
 const publicImageStudioEnabled = process.env.NEXT_PUBLIC_ENABLE_PUBLIC_IMAGE_STUDIO === 'true';
 const liveVoiceEnabled = process.env.NEXT_PUBLIC_ENABLE_LIVE_VOICE === 'true';
 
+const pwaIcon = '/branding/abhiai-app-icon-light-512.png?v=20260904b';
+
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://abhiai.vercel.app'),
   title: {
@@ -34,23 +36,26 @@ export const metadata: Metadata = {
   manifest: '/manifest.webmanifest',
   icons: {
     icon: [
-      { url: '/branding/abhiai-app-icon-light-512.png', sizes: '512x512', type: 'image/png' },
+      { url: pwaIcon, sizes: '512x512', type: 'image/png' },
+    ],
+    shortcut: [
+      { url: pwaIcon, sizes: '512x512', type: 'image/png' },
     ],
     apple: [
-      { url: '/branding/abhiai-app-icon-light-512.png', sizes: '512x512', type: 'image/png' },
+      { url: pwaIcon, sizes: '512x512', type: 'image/png' },
     ],
   },
   openGraph: {
     title: 'AbhiAI',
     description: 'Intelligence. Clarity. Innovation.',
     type: 'website',
-    images: ['/branding/abhiai-app-icon-light-512.png'],
+    images: [pwaIcon],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'AbhiAI',
     description: 'Intelligence. Clarity. Innovation.',
-    images: ['/branding/abhiai-app-icon-light-512.png'],
+    images: [pwaIcon],
   },
 };
 

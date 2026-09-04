@@ -135,3 +135,20 @@
     gap: 0.15rem;
   }
 }
+
+/* Desktop sidebar control: use the existing React open/close state instead of
+   forcing the navigation panel to stay expanded at md+ breakpoints. */
+@media (min-width: 768px) {
+  .fixed.inset-y-0.left-0.-translate-x-full.md\:translate-x-0 {
+    transform: translateX(-100%) !important;
+  }
+
+  .relative.flex-1.flex.flex-col.md\:ml-72 {
+    margin-left: 0 !important;
+  }
+
+  .relative.flex-1.flex.flex-col > header > div:first-child > button.md\:hidden,
+  .fixed.inset-y-0.left-0 > div:first-child > button.md\:hidden {
+    display: inline-flex !important;
+  }
+}
