@@ -75,7 +75,7 @@ Provide comprehensive, structured analyses with:
 - Critical counter-arguments and future outlook.`,
     preferredModelOrAlias: 'abhiai-think',
     requiredCapabilities: ['text', 'reasoning'],
-    allowedTools: ['web_search', 'document_qa'],
+    allowedTools: ['web_search', 'document_qa', 'image_generation'],
     visibility: 'public',
     temperature: 0.4,
     sampleStarters: [
