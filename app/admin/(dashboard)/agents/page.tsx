@@ -261,7 +261,7 @@ export default function AgentsManagementPage() {
       {isModalOpen && editingAgent && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 backdrop-blur-sm sm:p-4">
           <div className="flex max-h-[94vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
-            <div className="flex items-center justify-between border-b border-zinc-100 px-5 py-4 dark:border-zinc-800 sm:px-6"><div><h2 className="text-lg font-bold">{isEditingExisting ? 'Edit Agent' : 'Create Agent'}</h2><p className="text-xs text-zinc-500">Identity, routing, capabilities and access.</p></div><button onClick={() => setIsModalOpen(false)} className="rounded-lg p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800"><X className="w-5 h-5" /></button></div>
+            <div className="flex items-center justify-between border-b border-zinc-100 px-5 py-4 dark:border-zinc-800 sm:px-6"><div><h2 className="text-lg font-bold">{isEditingExisting ? 'Edit Agent' : 'Create Agent'}</h2><p className="text-xs text-zinc-500">Identity, routing, capabilities and visibility.</p></div><button onClick={() => setIsModalOpen(false)} className="rounded-lg p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800"><X className="w-5 h-5" /></button></div>
 
             <div className="flex-1 space-y-5 overflow-y-auto p-5 text-xs sm:p-6">
               <div className="grid gap-3 sm:grid-cols-2">
@@ -271,7 +271,7 @@ export default function AgentsManagementPage() {
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="space-y-1.5"><span className="font-bold uppercase tracking-wider">Icon</span><select value={editingAgent.icon || 'bot'} onChange={(e) => setEditingAgent({ ...editingAgent, icon: e.target.value })} className="w-full rounded-xl border bg-zinc-50 px-3 py-2.5 dark:bg-zinc-950">{ICONS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
-                <label className="space-y-1.5"><span className="font-bold uppercase tracking-wider">Access</span><select value={editingAgent.visibility || 'admin_only'} onChange={(e) => setEditingAgent({ ...editingAgent, visibility: e.target.value as AIAgent['visibility'] })} className="w-full rounded-xl border bg-zinc-50 px-3 py-2.5 dark:bg-zinc-950"><option value="public">Public</option><option value="admin_only">Private / Admin Only</option><option value="disabled">Disabled</option></select></label>
+                <label className="space-y-1.5"><span className="font-bold uppercase tracking-wider">Visibility</span><select value={editingAgent.visibility || 'admin_only'} onChange={(e) => setEditingAgent({ ...editingAgent, visibility: e.target.value as AIAgent['visibility'] })} className="w-full rounded-xl border bg-zinc-50 px-3 py-2.5 dark:bg-zinc-950"><option value="public">Public</option><option value="admin_only">Private / Admin Only</option><option value="disabled">Disabled</option></select></label>
               </div>
 
               <label className="block space-y-1.5"><span className="font-bold uppercase tracking-wider">Instructions *</span><textarea rows={6} value={editingAgent.systemPrompt || ''} onChange={(e) => setEditingAgent({ ...editingAgent, systemPrompt: e.target.value })} className="w-full rounded-xl border bg-zinc-50 p-3 font-mono text-xs dark:bg-zinc-950" /></label>
