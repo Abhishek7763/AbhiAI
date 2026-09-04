@@ -8,7 +8,7 @@ export interface AIAgent {
   icon: string;
   systemPrompt: string;
   preferredModelOrAlias: string;
-  modelPool: string[];
+  modelPool?: string[];
   fallbackModelOrAlias?: string;
   requiredCapabilities: AgentCapability[];
   allowedTools: AgentToolPermission[];
