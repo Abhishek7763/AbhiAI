@@ -44,7 +44,6 @@ export async function notifyGenerationComplete(options: {
       badge: '/branding/abhiai-app-icon-light-512.png?v=20260904b',
       tag: options.tag || 'abhiai-generation-complete',
       data: { url: options.url || '/' },
-      renotify: true,
     });
     return true;
   } catch (error) {
