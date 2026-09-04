@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getRuntimeInstructions } from "@/lib/ai/runtime-instructions";
 import { resolveRoutePlan, RouteCandidate } from "@/lib/ai/router";
 import { getProviderAdapter } from "@/lib/ai/providers/registry";
+import { getAvailableAgentTools } from "@/lib/ai/tools";
 import { logUsageEvent } from "@/lib/usage-logger";
 import { recordRuntimeModelFailure, recordRuntimeModelSuccess } from "@/lib/ai/runtime-health";
 import { withTimeout } from "@/lib/ai/timeout";
@@ -18,6 +19,7 @@ import {
 export const maxDuration = 180;
 
 const PROVIDER_TIMEOUT_MS = 35_000;
+const TOOL_PROVIDER_TIMEOUT_MS = 90_000;
 const RUNTIME_HEALTH_WRITE_TIMEOUT_MS = 2_500;
 
 function isClientAbort(error: unknown) {
@@ -76,6 +78,7 @@ export async function POST(req: Request) {
 
     const globalInstructions = await getRuntimeInstructions();
     const executionChain: RouteCandidate[] = [routePlan.primary, ...routePlan.fallbacks];
+    const availableTools = getAvailableAgentTools({ attachments: currentAttachments });
 
     let successfulReply: string | null = null;
     let executedCandidate: RouteCandidate | null = null;
@@ -85,10 +88,24 @@ export async function POST(req: Request) {
       const candidateStartedAt = Date.now();
 
       try {
-        const combinedPrompt = [globalInstructions, candidate.systemPrompt].filter(Boolean).join('\n\n');
-        const documentTextAppendix = formatDocumentsForPrompt(currentAttachments, {
-          skipNativePdf: candidate.providerId === 'google',
-        });
+        const adapter = getProviderAdapter(candidate.providerId, candidate.baseUrl);
+        if (!adapter) {
+          throw new Error(`Adapter for provider ${candidate.providerId} could not be resolved`);
+        }
+        if (!candidate.apiKey) {
+          throw new Error(`No runtime API key is available for ${candidate.name}`);
+        }
+
+        const toolAware = typeof adapter.chatWithTools === 'function' && availableTools.length > 0;
+        const toolInstruction = toolAware
+          ? 'You have access to callable tools. Use web_search for current/time-sensitive facts and document_qa when the answer should come from an attached document. Do not claim a tool was used unless you actually called it.'
+          : '';
+        const combinedPrompt = [globalInstructions, candidate.systemPrompt, toolInstruction].filter(Boolean).join('\n\n');
+        const documentTextAppendix = toolAware
+          ? ''
+          : formatDocumentsForPrompt(currentAttachments, {
+              skipNativePdf: candidate.providerId === 'google',
+            });
         const userEffectiveContent = (userMessage || 'Please review the attached content.') + documentTextAppendix;
 
         const chatMessages: any[] = safeHistory.map((item) => ({
@@ -106,17 +123,20 @@ export async function POST(req: Request) {
           attachments: candidateAttachments,
         });
 
-        const adapter = getProviderAdapter(candidate.providerId, candidate.baseUrl);
-        if (!adapter) {
-          throw new Error(`Adapter for provider ${candidate.providerId} could not be resolved`);
-        }
-        if (!candidate.apiKey) {
-          throw new Error(`No runtime API key is available for ${candidate.name}`);
-        }
+        const providerPromise = toolAware
+          ? adapter.chatWithTools!(
+              candidate.apiKey,
+              candidate.modelId,
+              chatMessages,
+              combinedPrompt,
+              availableTools,
+              { attachments: currentAttachments },
+            )
+          : adapter.chat(candidate.apiKey, candidate.modelId, chatMessages, combinedPrompt);
 
         const reply = await withTimeout(
-          adapter.chat(candidate.apiKey, candidate.modelId, chatMessages, combinedPrompt),
-          PROVIDER_TIMEOUT_MS,
+          providerPromise,
+          toolAware ? TOOL_PROVIDER_TIMEOUT_MS : PROVIDER_TIMEOUT_MS,
           candidate.name,
         );
 
