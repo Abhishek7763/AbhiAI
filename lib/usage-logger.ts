@@ -1,5 +1,6 @@
 import { insertUsageEvent } from './data/admin-config';
 import { logger } from './logger';
+import { evaluateOpsAlerts } from './ops-alerts';
 
 export interface UsageEntry {
   id: string;
@@ -20,18 +21,30 @@ export interface UsageEntry {
 }
 
 async function persistUsageEvent(entry: Omit<UsageEntry, 'id' | 'timestamp'>) {
+  let persisted = false;
   try {
     await insertUsageEvent(entry);
-    return;
+    persisted = true;
   } catch (error) {
     logger.debug('Initial usage telemetry write failed; retrying once.', error);
   }
 
-  await new Promise((resolve) => setTimeout(resolve, 200));
-  try {
-    await insertUsageEvent(entry);
-  } catch (error) {
-    logger.warn('Usage telemetry could not be persisted after retry.', error);
+  if (!persisted) {
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    try {
+      await insertUsageEvent(entry);
+      persisted = true;
+    } catch (error) {
+      logger.warn('Usage telemetry could not be persisted after retry.', error);
+    }
+  }
+
+  if (persisted) {
+    await evaluateOpsAlerts({
+      provider: entry.provider,
+      connectionId: entry.connectionId,
+      status: entry.status,
+    });
   }
 }
 
