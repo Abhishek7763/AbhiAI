@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { classifyModelBilling } from '@/lib/ai/free-guard';
+import { clampFailoverAttempts, clampProviderTimeoutMs } from '@/lib/ai/failover';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 export type RoutingConfig = {
@@ -8,6 +9,8 @@ export type RoutingConfig = {
   preferredModelRecordId: string | null;
   poolModelRecordIds: string[];
   strictPool: boolean;
+  maxAttempts: number;
+  providerTimeoutMs: number;
 };
 
 export type RoutingModelOption = {
@@ -28,6 +31,8 @@ const DEFAULT_ROUTING_CONFIG: RoutingConfig = {
   preferredModelRecordId: null,
   poolModelRecordIds: [],
   strictPool: false,
+  maxAttempts: 4,
+  providerTimeoutMs: 35_000,
 };
 
 function sanitizeConfig(value: unknown): RoutingConfig {
@@ -44,6 +49,8 @@ function sanitizeConfig(value: unknown): RoutingConfig {
         : null,
     poolModelRecordIds: Array.from(new Set(pool)),
     strictPool: raw.strictPool === true,
+    maxAttempts: clampFailoverAttempts(raw.maxAttempts, 4),
+    providerTimeoutMs: clampProviderTimeoutMs(raw.providerTimeoutMs),
   };
 }
 
@@ -115,13 +122,15 @@ export async function saveRoutingConfig(input: Partial<RoutingConfig>): Promise<
     preferredModelRecordId: requestedPreferred,
     poolModelRecordIds,
     strictPool: input.strictPool === true && poolModelRecordIds.length > 0,
+    maxAttempts: clampFailoverAttempts(input.maxAttempts, 4),
+    providerTimeoutMs: clampProviderTimeoutMs(input.providerTimeoutMs),
   };
 
   const supabase = createAdminClient();
   const { error } = await supabase.from('app_settings').upsert({
     key: 'routing',
     value: config,
-    description: 'AbhiAI Smart Auto model pool, preferred-model boost, strict-pool mode and automatic failover routing.',
+    description: 'AbhiAI Smart Auto model pool, failover attempt limit, provider timeout and strict-pool routing policy.',
   });
   if (error) throw new Error(error.message);
 
