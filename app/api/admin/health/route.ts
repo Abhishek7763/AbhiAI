@@ -4,6 +4,7 @@ import { listConnections, listRuntimeConnections } from '@/lib/data/ai-config';
 import { getProviderAdapter } from '@/lib/ai/providers/registry';
 import { diagnoseAIError } from '@/lib/ai/error-doctor';
 import { classifyModelBilling } from '@/lib/ai/free-guard';
+import { listRuntimeRoutingSignals } from '@/lib/ai/runtime-health';
 import { withTimeout } from '@/lib/ai/timeout';
 
 export const maxDuration = 60;
@@ -11,10 +12,13 @@ export const maxDuration = 60;
 const HEALTH_DATA_TIMEOUT_MS = 8_000;
 const PROVIDER_HEALTH_TIMEOUT_MS = 12_000;
 
+type HealthStatus = 'HEALTHY' | 'DEGRADED' | 'RATE_LIMITED' | 'AUTH_ERROR' | 'OFFLINE' | 'CONFIG_ERROR';
+
 interface ProviderHealthResult {
-  status: 'HEALTHY' | 'DEGRADED' | 'RATE_LIMITED' | 'AUTH_ERROR' | 'OFFLINE' | 'CONFIG_ERROR';
+  status: HealthStatus;
   latencyMs: number;
   diagnosis?: ReturnType<typeof diagnoseAIError>;
+  failureReason: string | null;
   lastChecked: string;
 }
 
@@ -37,13 +41,42 @@ function isSafeRuntimeModel(connection: { providerId?: string; baseUrl: string; 
   return billing === 'FREE_VERIFIED' || billing === 'FREE_LIMITED';
 }
 
+function configError(
+  configured: AIConnection,
+  title: string,
+  message: string,
+  action: string,
+  code: string,
+) {
+  const lastChecked = new Date().toISOString();
+  return {
+    id: configured.id,
+    name: configured.name,
+    modelId: configured.modelId,
+    provider: providerIdFor(configured),
+    scope: configured.scope,
+    runtimeEligible: false,
+    status: 'CONFIG_ERROR' as const,
+    latencyMs: 0,
+    diagnosis: {
+      code,
+      userTitle: title,
+      userMessage: message,
+      recommendedAction: action,
+    },
+    failureReason: title,
+    lastChecked,
+  };
+}
+
 export async function GET() {
   let configuredConnections: AIConnection[];
   let runtimeConnections: AIConnection[];
+  let runtimeSignals: Awaited<ReturnType<typeof listRuntimeRoutingSignals>>;
 
   try {
-    [configuredConnections, runtimeConnections] = await withTimeout(
-      Promise.all([listConnections(), listRuntimeConnections()]),
+    [configuredConnections, runtimeConnections, runtimeSignals] = await withTimeout(
+      Promise.all([listConnections(), listRuntimeConnections(), listRuntimeRoutingSignals()]),
       HEALTH_DATA_TIMEOUT_MS,
       'Health configuration load',
     );
@@ -58,47 +91,37 @@ export async function GET() {
     (connection) => connection.isActive && isSafeRuntimeModel(connection),
   );
   const runtimeById = new Map(runtimeConnections.map((connection) => [connection.id, connection]));
+  const runtimeSignalById = new Map(runtimeSignals.map((signal) => [signal.id, signal]));
   const providerChecks = new Map<string, Promise<ProviderHealthResult>>();
 
   const healthResults = await Promise.all(
     activeConfigured.map(async (configured) => {
       const runtime = runtimeById.get(configured.id);
+      const runtimeSignal = runtimeSignalById.get(configured.id) ?? null;
 
       if (!configured.hasApiKey) {
         return {
-          id: configured.id,
-          name: configured.name,
-          modelId: configured.modelId,
-          provider: providerIdFor(configured),
-          scope: configured.scope,
-          status: 'CONFIG_ERROR' as const,
-          latencyMs: 0,
-          diagnosis: {
-            code: 'CONFIG_ERROR',
-            userTitle: 'API Key Missing',
-            userMessage: 'This active model does not have an active provider API key available to the runtime.',
-            recommendedAction: 'Open Admin > Integrations and save or reactivate the provider API key.',
-          },
-          lastChecked: new Date().toISOString(),
+          ...configError(
+            configured,
+            'API Key Missing',
+            'This active model does not have an active provider API key available to the runtime.',
+            'Open Admin > Integrations and save or reactivate the provider API key.',
+            'CONFIG_ERROR',
+          ),
+          runtime: runtimeSignal,
         };
       }
 
       if (!runtime) {
         return {
-          id: configured.id,
-          name: configured.name,
-          modelId: configured.modelId,
-          provider: providerIdFor(configured),
-          scope: configured.scope,
-          status: 'CONFIG_ERROR' as const,
-          latencyMs: 0,
-          diagnosis: {
-            code: 'RUNTIME_BLOCKED',
-            userTitle: 'Model Not Runtime Eligible',
-            userMessage: 'The model is configured but is currently excluded from the safe AbhiAI runtime.',
-            recommendedAction: 'Check Admin > Models and Integrations. Only active, Free Guard approved models with an active provider are used.',
-          },
-          lastChecked: new Date().toISOString(),
+          ...configError(
+            configured,
+            'Model Not Runtime Eligible',
+            'The model is configured but is currently excluded from the safe AbhiAI runtime.',
+            'Check Admin > Models and Integrations. Only active, Free Guard approved models with an active provider are used.',
+            'RUNTIME_BLOCKED',
+          ),
+          runtime: runtimeSignal,
         };
       }
 
@@ -122,6 +145,7 @@ export async function GET() {
                   userMessage: 'AbhiAI could not resolve a compatible provider adapter for this connection.',
                   recommendedAction: 'Review the provider configuration in Admin > Integrations.',
                 },
+                failureReason: 'Provider Adapter Missing',
                 lastChecked,
               };
             }
@@ -131,9 +155,26 @@ export async function GET() {
               PROVIDER_HEALTH_TIMEOUT_MS,
               `${runtime.name} health check`,
             );
+
+            if (!isOk) {
+              return {
+                status: 'DEGRADED' as const,
+                latencyMs: Date.now() - startedAt,
+                diagnosis: {
+                  code: 'DEGRADED',
+                  userTitle: 'Provider Check Did Not Pass',
+                  userMessage: 'The provider responded, but its connection test did not report a healthy state.',
+                  recommendedAction: 'Retry the diagnostic and verify provider configuration if this continues.',
+                },
+                failureReason: 'Provider check did not pass',
+                lastChecked,
+              };
+            }
+
             return {
-              status: isOk ? 'HEALTHY' as const : 'DEGRADED' as const,
+              status: 'HEALTHY' as const,
               latencyMs: Date.now() - startedAt,
+              failureReason: null,
               lastChecked,
             };
           } catch (error) {
@@ -151,6 +192,7 @@ export async function GET() {
               status,
               latencyMs: Date.now() - startedAt,
               diagnosis,
+              failureReason: diagnosis.userTitle,
               lastChecked,
             };
           }
@@ -165,9 +207,25 @@ export async function GET() {
         provider: providerId,
         scope: configured.scope,
         runtimeEligible: true,
+        runtime: runtimeSignal,
         ...providerHealth,
       };
     }),
+  );
+
+  const statusCounts = healthResults.reduce<Record<HealthStatus, number>>(
+    (counts, item) => {
+      counts[item.status] += 1;
+      return counts;
+    },
+    {
+      HEALTHY: 0,
+      DEGRADED: 0,
+      RATE_LIMITED: 0,
+      AUTH_ERROR: 0,
+      OFFLINE: 0,
+      CONFIG_ERROR: 0,
+    },
   );
 
   return NextResponse.json({
@@ -176,6 +234,8 @@ export async function GET() {
       activeModels: activeConfigured.length,
       runtimeModels: runtimeConnections.length,
       checkedProviders: providerChecks.size,
+      statusCounts,
+      generatedAt: new Date().toISOString(),
     },
   });
 }
