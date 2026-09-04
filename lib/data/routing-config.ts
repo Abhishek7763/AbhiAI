@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { classifyModelBilling } from '@/lib/ai/free-guard';
+import { clampFailoverAttempts, clampProviderTimeoutMs } from '@/lib/ai/failover';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 export type RoutingConfig = {
@@ -8,6 +9,9 @@ export type RoutingConfig = {
   preferredModelRecordId: string | null;
   poolModelRecordIds: string[];
   strictPool: boolean;
+  failoverEnabled: boolean;
+  maxAttempts: number;
+  providerTimeoutMs: number;
 };
 
 export type RoutingModelOption = {
@@ -28,6 +32,9 @@ const DEFAULT_ROUTING_CONFIG: RoutingConfig = {
   preferredModelRecordId: null,
   poolModelRecordIds: [],
   strictPool: false,
+  failoverEnabled: true,
+  maxAttempts: 4,
+  providerTimeoutMs: 35_000,
 };
 
 function sanitizeConfig(value: unknown): RoutingConfig {
@@ -44,6 +51,9 @@ function sanitizeConfig(value: unknown): RoutingConfig {
         : null,
     poolModelRecordIds: Array.from(new Set(pool)),
     strictPool: raw.strictPool === true,
+    failoverEnabled: raw.failoverEnabled !== false,
+    maxAttempts: clampFailoverAttempts(raw.maxAttempts),
+    providerTimeoutMs: clampProviderTimeoutMs(raw.providerTimeoutMs),
   };
 }
 
@@ -115,13 +125,16 @@ export async function saveRoutingConfig(input: Partial<RoutingConfig>): Promise<
     preferredModelRecordId: requestedPreferred,
     poolModelRecordIds,
     strictPool: input.strictPool === true && poolModelRecordIds.length > 0,
+    failoverEnabled: input.failoverEnabled !== false,
+    maxAttempts: clampFailoverAttempts(input.maxAttempts),
+    providerTimeoutMs: clampProviderTimeoutMs(input.providerTimeoutMs),
   };
 
   const supabase = createAdminClient();
   const { error } = await supabase.from('app_settings').upsert({
     key: 'routing',
     value: config,
-    description: 'AbhiAI Smart Auto model pool, preferred-model boost, strict-pool mode and automatic failover routing.',
+    description: 'AbhiAI Smart Auto pool plus Phase 10 failover attempts, provider timeout and emergency routing policy.',
   });
   if (error) throw new Error(error.message);
 
