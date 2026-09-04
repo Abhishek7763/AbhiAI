@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
   Activity,
@@ -65,8 +65,8 @@ export default function HealthCenterPage() {
   const [checking, setChecking] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
 
-  const fetchHealth = useCallback(async (manual = false) => {
-    if (manual) setChecking(true);
+  const runHealthDiagnostics = async () => {
+    setChecking(true);
     setPageError(null);
     try {
       const res = await fetch('/api/admin/health', { cache: 'no-store' });
@@ -77,13 +77,32 @@ export default function HealthCenterPage() {
       setPageError(error instanceof Error ? error.message : 'Health diagnostics failed.');
     } finally {
       setLoading(false);
-      if (manual) setChecking(false);
+      setChecking(false);
     }
-  }, []);
+  };
 
   useEffect(() => {
-    void fetchHealth(false);
-  }, [fetchHealth]);
+    let active = true;
+    fetch('/api/admin/health', { cache: 'no-store' })
+      .then(async (res) => {
+        const data = await res.json() as HealthResponse;
+        if (!res.ok) throw new Error(data.error || 'Health diagnostics failed.');
+        return data;
+      })
+      .then((data) => {
+        if (active) setHealthData(Array.isArray(data.health) ? data.health : []);
+      })
+      .catch((error) => {
+        if (active) setPageError(error instanceof Error ? error.message : 'Health diagnostics failed.');
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const counts = useMemo(() => ({
     healthy: healthData.filter((item) => item.status === 'HEALTHY').length,
@@ -104,7 +123,7 @@ export default function HealthCenterPage() {
         </div>
         <button
           type="button"
-          onClick={() => void fetchHealth(true)}
+          onClick={() => void runHealthDiagnostics()}
           disabled={checking}
           className="flex items-center justify-center gap-2 rounded-xl bg-zinc-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-90 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
         >
