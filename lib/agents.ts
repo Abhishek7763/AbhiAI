@@ -1,3 +1,5 @@
+export type AgentToolPermission = 'web_search' | 'document_qa' | 'image_generation';
+
 export interface AIAgent {
   id: string;
   name: string;
@@ -7,6 +9,7 @@ export interface AIAgent {
   preferredModelOrAlias: string;
   fallbackModelOrAlias?: string;
   requiredCapabilities: ('text' | 'vision' | 'coding' | 'reasoning' | 'fast')[];
+  allowedTools: AgentToolPermission[];
   visibility: 'public' | 'admin_only' | 'disabled';
   temperature: number;
   sampleStarters: string[];
@@ -28,6 +31,7 @@ Your goal is to help students learn deeply by:
 3. Providing clear summaries and key takeaways.`,
     preferredModelOrAlias: 'abhiai-think',
     requiredCapabilities: ['text', 'reasoning'],
+    allowedTools: ['web_search', 'document_qa'],
     visibility: 'public',
     temperature: 0.5,
     sampleStarters: [
@@ -49,6 +53,7 @@ Follow strict clean code principles:
 - Explain trade-offs between architectural choices.`,
     preferredModelOrAlias: 'abhiai-code',
     requiredCapabilities: ['text', 'coding'],
+    allowedTools: ['web_search', 'document_qa'],
     visibility: 'public',
     temperature: 0.2,
     sampleStarters: [
@@ -70,6 +75,7 @@ Provide comprehensive, structured analyses with:
 - Critical counter-arguments and future outlook.`,
     preferredModelOrAlias: 'abhiai-think',
     requiredCapabilities: ['text', 'reasoning'],
+    allowedTools: ['web_search', 'document_qa'],
     visibility: 'public',
     temperature: 0.4,
     sampleStarters: [
@@ -88,6 +94,7 @@ Provide comprehensive, structured analyses with:
 Craft captivating, high-impact prose tailored to the requested audience with compelling hooks and concise phrasing.`,
     preferredModelOrAlias: 'abhiai-creative',
     requiredCapabilities: ['text'],
+    allowedTools: ['web_search', 'document_qa'],
     visibility: 'public',
     temperature: 0.8,
     sampleStarters: [
