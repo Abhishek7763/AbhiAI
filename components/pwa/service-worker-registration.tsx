@@ -32,27 +32,35 @@ function dismissalActive(key: string) {
   return Boolean(dismissedAt && Date.now() - dismissedAt < DISMISS_MS);
 }
 
+function initialNotificationPermission(): NotificationPermission | 'unsupported' {
+  if (typeof window === 'undefined' || !('Notification' in window)) return 'unsupported';
+  return Notification.permission;
+}
+
 export function ServiceWorkerRegistration() {
   const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [showInstallCard, setShowInstallCard] = useState(false);
   const [showIosInstall, setShowIosInstall] = useState(false);
   const [showAlertsCard, setShowAlertsCard] = useState(false);
-  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | 'unsupported'>('default');
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | 'unsupported'>(initialNotificationPermission);
 
   useEffect(() => {
-    const standalone = isStandalone();
-    const permission: NotificationPermission | 'unsupported' = 'Notification' in window ? Notification.permission : 'unsupported';
-    setNotificationPermission(permission);
+    const timer = window.setTimeout(() => {
+      const standalone = isStandalone();
+      const permission = initialNotificationPermission();
 
-    if (standalone && permission === 'default' && !dismissalActive(ALERT_DISMISS_KEY)) {
-      const timer = window.setTimeout(() => setShowAlertsCard(true), 1200);
-      return () => window.clearTimeout(timer);
-    }
+      if (standalone && permission === 'default' && !dismissalActive(ALERT_DISMISS_KEY)) {
+        setShowAlertsCard(true);
+        return;
+      }
 
-    if (!standalone && isIosSafari() && !dismissalActive(INSTALL_DISMISS_KEY)) {
-      setShowIosInstall(true);
-      setShowInstallCard(true);
-    }
+      if (!standalone && isIosSafari() && !dismissalActive(INSTALL_DISMISS_KEY)) {
+        setShowIosInstall(true);
+        setShowInstallCard(true);
+      }
+    }, 1200);
+
+    return () => window.clearTimeout(timer);
   }, []);
 
   useEffect(() => {
