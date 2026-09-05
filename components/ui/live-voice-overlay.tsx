@@ -1,9 +1,8 @@
 'use client';
 
 import React from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { Mic, X, PhoneOff, Radio } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { AnimatePresence, motion } from 'motion/react';
+import { PhoneOff, Radio, X } from 'lucide-react';
 
 interface LiveVoiceOverlayProps {
   isOpen: boolean;
@@ -21,49 +20,47 @@ export function LiveVoiceOverlay({ isOpen, onClose, error }: LiveVoiceOverlayPro
           exit={{ opacity: 0 }}
           className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-zinc-950/90 backdrop-blur-md"
         >
-          {/* Top Bar */}
           <div className="absolute top-6 right-6">
             <button
               onClick={onClose}
               className="p-3 bg-zinc-900 text-zinc-400 hover:text-white rounded-full transition-colors"
+              aria-label="Close Voice Mode"
             >
               <X className="w-6 h-6" />
             </button>
           </div>
 
-          <div className="flex flex-col items-center justify-center gap-12">
+          <div className="flex flex-col items-center justify-center gap-12 px-6">
             <motion.div
-              animate={{ 
+              animate={{
                 scale: [1, 1.1, 1],
                 boxShadow: [
-                  "0 0 0 0 rgba(168, 85, 247, 0.4)",
-                  "0 0 0 40px rgba(168, 85, 247, 0)",
-                  "0 0 0 0 rgba(168, 85, 247, 0)"
-                ]
+                  '0 0 0 0 rgba(168, 85, 247, 0.4)',
+                  '0 0 0 40px rgba(168, 85, 247, 0)',
+                  '0 0 0 0 rgba(168, 85, 247, 0)',
+                ],
               }}
-              transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+              transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
               className="relative w-32 h-32 rounded-full bg-gradient-to-tr from-purple-600 via-indigo-600 to-blue-600 flex items-center justify-center shadow-2xl"
             >
               <div className="absolute inset-0 rounded-full bg-black/20" />
               <Radio className="w-12 h-12 text-white relative z-10 animate-pulse" />
-              
-              {/* Outer rings */}
               <div className="absolute inset-0 -m-8 border border-purple-500/30 rounded-full animate-[spin_10s_linear_infinite]" />
               <div className="absolute inset-0 -m-16 border border-blue-500/20 rounded-full animate-[spin_15s_linear_infinite_reverse]" />
             </motion.div>
 
             <div className="text-center space-y-4">
-              <h2 className="text-3xl font-bold text-white tracking-tight">Gemini Live Voice</h2>
+              <h2 className="text-3xl font-bold text-white tracking-tight">AbhiAI Voice</h2>
               {error ? (
-                <p className="text-red-400 font-medium max-w-sm px-4">{error}</p>
+                <p className="text-red-400 font-medium max-w-md">{error}</p>
               ) : (
                 <div className="flex flex-col items-center gap-2">
-                  <p className="text-zinc-400">Speak naturally, I&apos;m listening...</p>
-                  <div className="flex items-center gap-1">
-                    {[1,2,3,4,5].map(i => (
+                  <p className="text-zinc-400 max-w-md">Speak naturally. AbhiAI will listen, answer through the normal smart-routing system, and read the response aloud.</p>
+                  <div className="flex items-center gap-1" aria-label="Voice mode active">
+                    {[1, 2, 3, 4, 5].map((i) => (
                       <motion.div
                         key={i}
-                        animate={{ height: ["4px", "24px", "4px"] }}
+                        animate={{ height: ['4px', '24px', '4px'] }}
                         transition={{ duration: 0.8, repeat: Infinity, delay: i * 0.15 }}
                         className="w-1.5 bg-purple-500 rounded-full"
                       />
@@ -78,7 +75,7 @@ export function LiveVoiceOverlay({ isOpen, onClose, error }: LiveVoiceOverlayPro
               className="mt-8 flex items-center gap-2 px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-full font-medium transition-colors shadow-lg"
             >
               <PhoneOff className="w-5 h-5" />
-              <span>End Call</span>
+              <span>End Voice Mode</span>
             </button>
           </div>
         </motion.div>

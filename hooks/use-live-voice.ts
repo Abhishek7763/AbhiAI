@@ -1,181 +1,276 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { detectSpeechLanguage, toSpeakableText } from '@/lib/voice';
+
+type VoiceHistoryMessage = {
+  role: 'user' | 'assistant';
+  content: string;
+};
+
+type VoiceStatus = 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
+
+function getSpeechRecognitionConstructor() {
+  if (typeof window === 'undefined') return null;
+  return (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition || null;
+}
 
 export function useLiveVoice() {
   const [isLive, setIsLive] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
-  const wsRef = useRef<WebSocket | null>(null);
-  const inputAudioCtxRef = useRef<AudioContext | null>(null);
-  const outputAudioCtxRef = useRef<AudioContext | null>(null);
-  const mediaStreamRef = useRef<MediaStream | null>(null);
-  const processorRef = useRef<ScriptProcessorNode | null>(null);
-  
-  // Audio queue for playback
-  const audioQueueRef = useRef<Float32Array[]>([]);
-  const isPlayingRef = useRef(false);
+  const [status, setStatus] = useState<VoiceStatus>('idle');
 
-  const cleanup = useCallback(() => {
-    if (processorRef.current) {
-      processorRef.current.disconnect();
-      processorRef.current = null;
+  const recognitionRef = useRef<any>(null);
+  const activeRef = useRef(false);
+  const busyRef = useRef(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const voiceHistoryRef = useRef<VoiceHistoryMessage[]>([]);
+
+  const stopRecognition = useCallback(() => {
+    if (!recognitionRef.current) return;
+    try {
+      recognitionRef.current.abort();
+    } catch {
+      // Recognition may already be inactive.
     }
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach(track => track.stop());
-      mediaStreamRef.current = null;
-    }
-    if (inputAudioCtxRef.current) {
-      inputAudioCtxRef.current.close().catch(console.error);
-      inputAudioCtxRef.current = null;
-    }
-    if (outputAudioCtxRef.current) {
-      outputAudioCtxRef.current.close().catch(console.error);
-      outputAudioCtxRef.current = null;
-    }
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
-    }
-    audioQueueRef.current = [];
-    isPlayingRef.current = false;
-    setIsLive(false);
   }, []);
 
-  const playNextAudio = async () => {
-    if (!outputAudioCtxRef.current || audioQueueRef.current.length === 0) {
-      isPlayingRef.current = false;
-      return;
+  const cleanup = useCallback(() => {
+    activeRef.current = false;
+    busyRef.current = false;
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+    stopRecognition();
+
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
     }
-    isPlayingRef.current = true;
-    const chunk = audioQueueRef.current.shift();
-    if (!chunk) {
-      isPlayingRef.current = false;
-      return;
-    }
-    
+
+    recognitionRef.current = null;
+    voiceHistoryRef.current = [];
+    setStatus('idle');
+    setIsLive(false);
+  }, [stopRecognition]);
+
+  const startRecognition = useCallback(() => {
+    if (!activeRef.current || busyRef.current || !recognitionRef.current) return;
+    setError(null);
+    setStatus('listening');
     try {
-      const audioBuffer = outputAudioCtxRef.current.createBuffer(1, chunk.length, 24000);
-      audioBuffer.getChannelData(0).set(chunk);
-      const source = outputAudioCtxRef.current.createBufferSource();
-      source.buffer = audioBuffer;
-      source.connect(outputAudioCtxRef.current.destination);
-      source.onended = () => {
-        playNextAudio();
-      };
-      source.start();
-    } catch (err) {
-      console.error("Error playing audio chunk:", err);
-      playNextAudio();
-    }
-  };
-
-  const startLiveMode = async () => {
-    try {
-      setError(null);
-      // Determine ws protocol
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/live`;
-      const ws = new WebSocket(wsUrl);
-      wsRef.current = ws;
-
-      ws.onopen = async () => {
-        setIsLive(true);
-        // Request Mic
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: {
-            sampleRate: 16000,
-            channelCount: 1,
-            echoCancellation: true,
-            noiseSuppression: true
-        } });
-        mediaStreamRef.current = stream;
-
-        const inputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
-        inputAudioCtxRef.current = inputCtx;
-        
-        const outputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-        outputAudioCtxRef.current = outputCtx;
-
-        const source = inputCtx.createMediaStreamSource(stream);
-        const processor = inputCtx.createScriptProcessor(4096, 1, 1);
-        processorRef.current = processor;
-
-        source.connect(processor);
-        processor.connect(inputCtx.destination);
-
-        processor.onaudioprocess = (e) => {
-          if (ws.readyState === WebSocket.OPEN) {
-            const inputData = e.inputBuffer.getChannelData(0);
-            // Convert Float32 to Int16 Base64
-            const pcm16 = new Int16Array(inputData.length);
-            for (let i = 0; i < inputData.length; i++) {
-              let s = Math.max(-1, Math.min(1, inputData[i]));
-              pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-            }
-            const buffer = new Uint8Array(pcm16.buffer);
-            let binary = '';
-            for (let i = 0; i < buffer.byteLength; i++) {
-              binary += String.fromCharCode(buffer[i]);
-            }
-            const base64 = btoa(binary);
-            ws.send(JSON.stringify({ audio: base64 }));
-          }
-        };
-      };
-
-      ws.onmessage = (event) => {
-        const msg = JSON.parse(event.data);
-        if (msg.interrupted) {
-          audioQueueRef.current = []; // Clear queue
-        }
-        if (msg.audio) {
-          // Decode Base64 to Float32Array for AudioContext
-          const binary = atob(msg.audio);
-          const bytes = new Uint8Array(binary.length);
-          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-          const int16Array = new Int16Array(bytes.buffer);
-          const float32Array = new Float32Array(int16Array.length);
-          for (let i = 0; i < int16Array.length; i++) {
-            float32Array[i] = int16Array[i] / (int16Array[i] < 0 ? 0x8000 : 0x7FFF);
-          }
-          
-          audioQueueRef.current.push(float32Array);
-          if (!isPlayingRef.current) {
-            playNextAudio();
-          }
-        }
-      };
-
-      ws.onclose = () => {
-        cleanup();
-      };
-
-      ws.onerror = (err) => {
-        console.error("Live Voice WS Error:", err);
-        setError("Connection error. Please try again.");
-        cleanup();
-      };
+      recognitionRef.current.start();
     } catch (err: any) {
-      console.error("Failed to start Live Mode:", err);
-      setError(err.message || "Could not access microphone.");
-      cleanup();
+      if (err?.name !== 'InvalidStateError') {
+        activeRef.current = false;
+        setError('Could not restart microphone listening.');
+        setStatus('error');
+      }
     }
-  };
+  }, []);
 
-  const stopLiveMode = () => {
-    cleanup();
-  };
+  const speakReply = useCallback((text: string) => {
+    if (!activeRef.current || typeof window === 'undefined' || !window.speechSynthesis) {
+      busyRef.current = false;
+      startRecognition();
+      return;
+    }
 
-  useEffect(() => {
-    return () => {
-      cleanup();
+    const cleanText = toSpeakableText(text);
+    if (!cleanText) {
+      busyRef.current = false;
+      startRecognition();
+      return;
+    }
+
+    setStatus('speaking');
+    const language = detectSpeechLanguage(cleanText, navigator.language || 'en-US');
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    utterance.lang = language;
+    utterance.rate = 1;
+    utterance.pitch = 1;
+
+    const voices = window.speechSynthesis.getVoices();
+    const languagePrefix = language.split('-')[0].toLowerCase();
+    const matchingVoices = voices.filter((voice) => voice.lang.toLowerCase().startsWith(languagePrefix));
+    const preferredVoice = matchingVoices.find((voice) => /natural|google|neural|enhanced/i.test(voice.name)) || matchingVoices[0];
+    if (preferredVoice) utterance.voice = preferredVoice;
+
+    const continueConversation = () => {
+      busyRef.current = false;
+      if (activeRef.current) startRecognition();
     };
+
+    utterance.onend = continueConversation;
+    utterance.onerror = continueConversation;
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
+  }, [startRecognition]);
+
+  const processVoiceTurn = useCallback(async (transcript: string) => {
+    if (!activeRef.current || !transcript.trim()) return;
+
+    busyRef.current = true;
+    setError(null);
+    setStatus('thinking');
+
+    const userText = transcript.trim();
+    const priorHistory = voiceHistoryRef.current.slice(-8);
+    voiceHistoryRef.current = [...priorHistory, { role: 'user', content: userText }];
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    try {
+      const response = await fetch('/api/chat/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          message: userText,
+          history: priorHistory,
+          modelId: 'default',
+          attachments: [],
+          webSearch: false,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({}));
+        throw new Error(errorBody.error || 'Voice response could not be generated.');
+      }
+
+      if (!response.body) {
+        throw new Error('Voice response stream is unavailable.');
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let assistantText = '';
+
+      while (activeRef.current) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith('data:')) continue;
+          const payload = trimmed.replace(/^data:\s*/, '');
+          if (!payload) continue;
+
+          try {
+            const event = JSON.parse(payload);
+            if (event.type === 'delta' && event.text) {
+              assistantText += event.text;
+            } else if (event.type === 'error') {
+              throw new Error(event.error || 'Voice response failed.');
+            }
+          } catch (parseError: any) {
+            if (!(parseError instanceof SyntaxError)) {
+              throw parseError;
+            }
+          }
+        }
+      }
+
+      if (!activeRef.current) return;
+      if (!assistantText.trim()) {
+        throw new Error('AbhiAI returned an empty voice response.');
+      }
+
+      voiceHistoryRef.current = [
+        ...voiceHistoryRef.current.slice(-8),
+        { role: 'assistant', content: assistantText },
+      ];
+      speakReply(assistantText);
+    } catch (err: any) {
+      if (err?.name === 'AbortError') return;
+      console.error('Live voice error:', err);
+      activeRef.current = false;
+      setError(err?.message || 'Voice conversation is temporarily unavailable.');
+      setStatus('error');
+      busyRef.current = false;
+    } finally {
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+      }
+    }
+  }, [speakReply]);
+
+  const startLiveMode = useCallback(async () => {
+    if (typeof window === 'undefined') return;
+
+    setIsLive(true);
+    setError(null);
+    setStatus('idle');
+    voiceHistoryRef.current = [];
+
+    const SpeechRecognition = getSpeechRecognitionConstructor();
+    if (!SpeechRecognition || !window.speechSynthesis) {
+      setError('Live voice needs browser speech recognition and text-to-speech support. Try the latest Chrome or Edge.');
+      setStatus('error');
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.lang = navigator.language || 'en-US';
+
+    recognition.onresult = (event: any) => {
+      const transcript = Array.from(event.results as any[])
+        .map((result: any) => result?.[0]?.transcript || '')
+        .join(' ')
+        .trim();
+      if (transcript) {
+        void processVoiceTurn(transcript);
+      }
+    };
+
+    recognition.onerror = (event: any) => {
+      if (event.error === 'aborted') return;
+      if (event.error === 'no-speech') {
+        busyRef.current = false;
+        if (activeRef.current) startRecognition();
+        return;
+      }
+
+      activeRef.current = false;
+      const permissionError = event.error === 'not-allowed' || event.error === 'service-not-allowed';
+      setError(permissionError
+        ? 'Microphone permission is blocked. Allow microphone access and start Voice Mode again.'
+        : 'Microphone listening stopped unexpectedly.');
+      setStatus('error');
+      busyRef.current = false;
+    };
+
+    recognition.onend = () => {
+      if (activeRef.current && !busyRef.current) {
+        window.setTimeout(startRecognition, 250);
+      }
+    };
+
+    recognitionRef.current = recognition;
+    activeRef.current = true;
+    busyRef.current = false;
+    startRecognition();
+  }, [processVoiceTurn, startRecognition]);
+
+  const stopLiveMode = useCallback(() => {
+    cleanup();
   }, [cleanup]);
+
+  useEffect(() => cleanup, [cleanup]);
 
   return {
     isLive,
     error,
+    status,
     startLiveMode,
-    stopLiveMode
+    stopLiveMode,
   };
 }
