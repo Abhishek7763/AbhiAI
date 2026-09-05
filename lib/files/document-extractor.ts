@@ -78,6 +78,8 @@ export function estimateAttachmentBytes(file: Pick<AttachmentPayload, 'data'>) {
 }
 
 function isTextLike(file: Pick<AttachmentPayload, 'name' | 'type'>) {
+  if (isDocxAttachment(file) || isPdfAttachment(file)) return false;
+
   const type = (file.type || '').toLowerCase();
   const name = lowerName(file.name);
   return (
@@ -336,10 +338,10 @@ export function extractDocumentText(file: AttachmentPayload): ExtractedDocument 
   try {
     buffer = Buffer.from(normalizeAttachmentBase64(file.data), 'base64');
 
-    if (isTextLike(file)) {
-      extracted = buffer.toString('utf-8').replace(/^\uFEFF/, '');
-    } else if (isDocxAttachment(file)) {
+    if (isDocxAttachment(file)) {
       extracted = extractDocxText(buffer);
+    } else if (isTextLike(file)) {
+      extracted = buffer.toString('utf-8').replace(/^\uFEFF/, '');
     } else if (isPdfAttachment(file)) {
       // Fallback for non-Gemini providers only. Gemini receives original PDF bytes natively.
       const rawPdf = buffer.toString('binary');
