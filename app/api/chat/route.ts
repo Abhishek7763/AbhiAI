@@ -5,9 +5,15 @@ import { getProviderAdapter } from "@/lib/ai/providers/registry";
 import { logUsageEvent } from "@/lib/usage-logger";
 import { recordRuntimeModelFailure, recordRuntimeModelSuccess } from "@/lib/ai/runtime-health";
 import { withTimeout } from "@/lib/ai/timeout";
-import { sanitizeChatHistory, validateChatRequestSize, validateUserMessage } from "@/lib/ai/chat-input";
+import {
+  MAX_CHAT_REQUEST_BYTES,
+  sanitizeChatHistory,
+  validateChatRequestSize,
+  validateUserMessage,
+} from "@/lib/ai/chat-input";
 import { logger } from "@/lib/logger";
-import { protectPublicAiRequest } from "@/lib/security/public-api-guard";
+import { acquirePublicAiConcurrency, protectPublicAiRequest } from "@/lib/security/public-api-guard";
+import { RequestBodyTooLargeError, readJsonBodyWithLimit } from "@/lib/security/request-body";
 import {
   formatDocumentsForPrompt,
   isGeminiNativeAttachment,
@@ -29,6 +35,7 @@ function isClientAbort(error: unknown) {
 export async function POST(req: Request) {
   const startTime = Date.now();
   let requestedModel = 'default';
+  let releaseConcurrency: (() => Promise<void>) | null = null;
 
   const sizeError = validateChatRequestSize(req.headers.get('content-length'));
   if (sizeError) {
@@ -39,9 +46,13 @@ export async function POST(req: Request) {
   if (!guard.ok) return guard.response;
 
   try {
-    const { message, history, modelId, attachments } = await req.json();
+    const body = await readJsonBodyWithLimit<Record<string, unknown>>(req, MAX_CHAT_REQUEST_BYTES);
+    const message = body.message;
+    const history = body.history;
+    const modelId = body.modelId;
+    const attachments = body.attachments;
     const userMessage = typeof message === 'string' ? message : '';
-    const messageError = validateUserMessage(message);
+    const messageError = validateUserMessage(message, guard.settings.maxPromptLength);
     if (messageError) {
       return NextResponse.json({ error: messageError }, { status: 400 });
     }
@@ -65,6 +76,10 @@ export async function POST(req: Request) {
     if (attachmentError) {
       return NextResponse.json({ error: attachmentError }, { status: 413 });
     }
+
+    const concurrency = await acquirePublicAiConcurrency(req, 'chat', guard.userId);
+    if (!concurrency.ok) return concurrency.response;
+    releaseConcurrency = concurrency.release;
 
     const requiresVision = currentAttachments.some((attachment) => isImageAttachment(attachment));
     const requiresNativeDocument = currentAttachments.some((attachment) => isPdfAttachment(attachment));
@@ -202,6 +217,15 @@ export async function POST(req: Request) {
       { status: 502 },
     );
   } catch (error) {
+    if (error instanceof RequestBodyTooLargeError) {
+      return NextResponse.json(
+        { error: `Chat request is too large. Keep the total request under about ${Math.floor(MAX_CHAT_REQUEST_BYTES / 1_000_000)} MB.` },
+        { status: 413 },
+      );
+    }
+    if (error instanceof SyntaxError) {
+      return NextResponse.json({ error: 'Chat request contains invalid JSON.' }, { status: 400 });
+    }
     if (req.signal.aborted || isClientAbort(error)) {
       return new Response(null, { status: 499 });
     }
@@ -211,5 +235,7 @@ export async function POST(req: Request) {
       { error: "Internal Server Error in AbhiAI Chat Gateway" },
       { status: 500 },
     );
+  } finally {
+    if (releaseConcurrency) await releaseConcurrency();
   }
 }

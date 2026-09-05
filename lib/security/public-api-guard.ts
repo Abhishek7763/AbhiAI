@@ -1,14 +1,20 @@
 import 'server-only';
 
-import { createHmac } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { getStoredSettings } from '@/lib/data/admin-config';
 import { logger } from '@/lib/logger';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createClient as createUserClient } from '@/lib/supabase/server';
 import { extractClientIp, isTrustedRequestSource, parseAllowedOrigins } from '@/lib/security/request-origin';
+import {
+  resolvePublicConcurrencyLeaseSeconds,
+  resolvePublicConcurrencyLimit,
+  resolvePublicRateLimits,
+  type PublicAiScope,
+} from '@/lib/security/abuse-limits';
 
-type PublicApiScope = 'chat' | 'image';
+export type PublicApiScope = PublicAiScope;
 
 type GuardSuccess = {
   ok: true;
@@ -23,6 +29,10 @@ type GuardFailure = {
 
 export type PublicApiGuardResult = GuardSuccess | GuardFailure;
 
+export type PublicConcurrencyResult =
+  | { ok: true; release: () => Promise<void> }
+  | { ok: false; response: NextResponse };
+
 type RateLimitRow = {
   allowed: boolean;
   minute_count: number;
@@ -32,15 +42,19 @@ type RateLimitRow = {
   retry_after_seconds: number;
 };
 
+type ConcurrencyLeaseRow = {
+  allowed: boolean;
+  active_count: number;
+  concurrent_limit: number;
+  retry_after_seconds: number;
+};
+
 type TurnstileResult = {
   success?: boolean;
   hostname?: string;
   action?: string;
   'error-codes'?: string[];
 };
-
-const AUTHENTICATED_RPM_MULTIPLIER = 3;
-const AUTHENTICATED_DAILY_MULTIPLIER = 5;
 
 function configuredAllowedOrigins(requestUrl: string) {
   const origins = parseAllowedOrigins(process.env.PUBLIC_API_ALLOWED_ORIGINS);
@@ -214,6 +228,85 @@ async function verifyTurnstile(req: Request): Promise<NextResponse | null> {
   }
 }
 
+export async function acquirePublicAiConcurrency(
+  req: Request,
+  scope: PublicApiScope,
+  userId: string | null,
+): Promise<PublicConcurrencyResult> {
+  const identifier = rateLimitIdentifier(req, scope, userId);
+  if (!identifier) {
+    logger.error('Concurrency limiting is unavailable because no server-side hashing secret is configured.');
+    return {
+      ok: false,
+      response: NextResponse.json({ error: 'AbhiAI security configuration is incomplete.' }, { status: 503 }),
+    };
+  }
+
+  const leaseId = randomUUID();
+  const concurrentLimit = resolvePublicConcurrencyLimit(scope, Boolean(userId));
+  const leaseSeconds = resolvePublicConcurrencyLeaseSeconds(scope);
+
+  try {
+    const supabase = createAdminClient();
+    const { data, error } = await supabase.rpc('acquire_public_request_lease', {
+      p_identifier: identifier,
+      p_scope: scope,
+      p_lease_id: leaseId,
+      p_max_concurrent: concurrentLimit,
+      p_lease_seconds: leaseSeconds,
+    });
+    if (error) throw error;
+
+    const row = (Array.isArray(data) ? data[0] : data) as ConcurrencyLeaseRow | null;
+    if (!row) throw new Error('Concurrency limiter returned no decision.');
+
+    if (!row.allowed) {
+      const retryAfter = Math.max(1, Number(row.retry_after_seconds) || 1);
+      return {
+        ok: false,
+        response: NextResponse.json(
+          { error: 'Too many AbhiAI requests are already running. Wait for one to finish and try again.' },
+          {
+            status: 429,
+            headers: {
+              'Retry-After': String(retryAfter),
+              'X-Concurrency-Limit': String(row.concurrent_limit),
+            },
+          },
+        ),
+      };
+    }
+
+    let released = false;
+    return {
+      ok: true,
+      release: async () => {
+        if (released) return;
+        released = true;
+        try {
+          const { error: releaseError } = await supabase.rpc('release_public_request_lease', {
+            p_identifier: identifier,
+            p_scope: scope,
+            p_lease_id: leaseId,
+          });
+          if (releaseError) throw releaseError;
+        } catch (releaseError) {
+          logger.warn('Could not release public AI concurrency lease; expiry will clean it up.', releaseError);
+        }
+      },
+    };
+  } catch (error) {
+    logger.error('Public API concurrency limiter failed.', error);
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { error: 'AbhiAI concurrency protection is temporarily unavailable. Please try again shortly.' },
+        { status: 503 },
+      ),
+    };
+  }
+}
+
 export async function protectPublicAiRequest(req: Request, scope: PublicApiScope): Promise<PublicApiGuardResult> {
   const trustedSource = isTrustedRequestSource({
     requestUrl: req.url,
@@ -248,14 +341,14 @@ export async function protectPublicAiRequest(req: Request, scope: PublicApiScope
   }
 
   const userId = await resolveAuthenticatedUserId();
-  const rateLimitRPM = userId
-    ? Math.max(settings.rateLimitRPM, settings.rateLimitRPM * AUTHENTICATED_RPM_MULTIPLIER)
-    : settings.rateLimitRPM;
-  const dailyLimit = userId
-    ? Math.max(settings.maxDailyRequestsPerIP, settings.maxDailyRequestsPerIP * AUTHENTICATED_DAILY_MULTIPLIER)
-    : settings.maxDailyRequestsPerIP;
+  const limits = resolvePublicRateLimits({
+    scope,
+    configuredRpm: settings.rateLimitRPM,
+    configuredDaily: settings.maxDailyRequestsPerIP,
+    authenticated: Boolean(userId),
+  });
 
-  const rateLimitFailure = await checkRateLimit(req, scope, rateLimitRPM, dailyLimit, userId);
+  const rateLimitFailure = await checkRateLimit(req, scope, limits.rpm, limits.daily, userId);
   if (rateLimitFailure) return { ok: false, response: rateLimitFailure };
 
   const turnstileFailure = await verifyTurnstile(req);

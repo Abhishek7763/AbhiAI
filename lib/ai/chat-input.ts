@@ -1,5 +1,7 @@
 import 'server-only';
 
+import { resolveConfiguredPromptLimit } from '@/lib/security/abuse-limits';
+
 export type SafeChatHistoryMessage = {
   role: 'user' | 'assistant';
   content: string;
@@ -21,11 +23,12 @@ export function validateChatRequestSize(contentLengthHeader: string | null) {
   return null;
 }
 
-export function validateUserMessage(value: unknown) {
+export function validateUserMessage(value: unknown, configuredMaxChars = MAX_USER_MESSAGE_CHARS) {
   if (value === undefined || value === null || value === '') return null;
   if (typeof value !== 'string') return 'Message must be plain text.';
-  if (value.length > MAX_USER_MESSAGE_CHARS) {
-    return `Message is too long. Keep a single message under ${MAX_USER_MESSAGE_CHARS.toLocaleString()} characters.`;
+  const maxChars = resolveConfiguredPromptLimit(configuredMaxChars);
+  if (value.length > maxChars) {
+    return `Message is too long. Keep a single message under ${maxChars.toLocaleString()} characters.`;
   }
   return null;
 }
