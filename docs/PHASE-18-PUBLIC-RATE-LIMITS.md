@@ -1,6 +1,6 @@
 # Phase 18 — Public Rate Limits / Abuse Protection
 
-Status: **Implementation in progress on `improve/abhiai-stability`; completion requires Verify CI success.**
+Status: **Implemented on `improve/abhiai-stability`; completion requires Verify CI success.**
 
 ## Master-plan scope
 
@@ -41,17 +41,22 @@ Phase 18 builds on the existing Phase 2 security layer rather than replacing it:
 
 - Public chat now uses the administrator's `maxPromptLength` setting instead of only the older 20,000-character hard ceiling.
 - The hard ceiling remains 20,000 characters even if an unsafe larger setting is supplied.
+- Image prompts continue to use the configured prompt limit and image negative prompts are capped at 4,000 characters.
 
 ### Bounded request-body reading
 
 - Chat JSON is read through a streaming byte counter.
 - The route aborts once the request exceeds the chat-body ceiling even if a malicious caller omits or lies about `Content-Length`.
+- Image-generation JSON is independently bounded to 64 KB before parsing.
 - Existing document/image attachment validation remains the second validation layer after parsing.
 
 ### Distributed concurrency leases
 
 - A private Supabase lease table tracks active public AI work across Vercel/serverless instances.
 - Per-identity chat concurrency is limited to 2 guest requests or 3 authenticated requests.
+- Per-identity image-generation concurrency is limited to 1 active request.
+- Chat streaming releases the lease on normal completion, cancellation, or stream failure.
+- Non-stream chat and image generation release their leases in `finally` cleanup.
 - The database uses a per-identity advisory transaction lock so simultaneous lease acquisition cannot race past the configured concurrency ceiling.
 - Leases expire automatically if a serverless invocation dies before explicit cleanup.
 - Acquire/release RPCs are callable only by `service_role`; `anon` and `authenticated` have no execute privilege.
