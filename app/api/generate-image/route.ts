@@ -5,7 +5,8 @@ import { getStoredProviderApiKey, listProviders } from '@/lib/data/ai-config';
 import { logUsageEvent } from '@/lib/usage-logger';
 import { logger } from '@/lib/logger';
 import { moderateImagePrompt } from '@/lib/security/image-moderation';
-import { protectPublicAiRequest } from '@/lib/security/public-api-guard';
+import { acquirePublicAiConcurrency, protectPublicAiRequest } from '@/lib/security/public-api-guard';
+import { RequestBodyTooLargeError, readJsonBodyWithLimit } from '@/lib/security/request-body';
 import { createClient as createSupabaseServerClient } from '@/lib/supabase/server';
 
 type ImageEngine = 'auto' | 'imagen' | 'openai' | 'dalle' | 'stability' | 'flux';
@@ -23,6 +24,8 @@ const GEMINI_IMAGE_MODEL = 'gemini-3.1-flash-image';
 const STABILITY_IMAGE_MODEL = 'stable-image-core';
 const GENERATED_IMAGE_BUCKET = 'generated-images';
 const MAX_STORED_IMAGE_BYTES = 10 * 1024 * 1024;
+const MAX_IMAGE_REQUEST_BYTES = 64_000;
+const MAX_NEGATIVE_PROMPT_CHARS = 4_000;
 
 function enhancePrompt(prompt: string, style: string) {
   switch (style) {
@@ -312,13 +315,14 @@ export async function POST(req: NextRequest) {
   const startedAt = Date.now();
   let cleanPrompt = '';
   let attempts = 0;
+  let releaseConcurrency: (() => Promise<void>) | null = null;
 
   const guard = await protectPublicAiRequest(req, 'image');
   if (!guard.ok) return guard.response;
   const settings = guard.settings;
 
   try {
-    const body = await req.json() as Record<string, unknown>;
+    const body = await readJsonBodyWithLimit<Record<string, unknown>>(req, MAX_IMAGE_REQUEST_BYTES);
     const prompt = body.prompt;
     const style = typeof body.style === 'string' ? body.style : 'photorealistic';
     const aspectRatio = typeof body.aspectRatio === 'string' ? body.aspectRatio : '1:1';
@@ -333,6 +337,12 @@ export async function POST(req: NextRequest) {
     if (cleanPrompt.length > settings.maxPromptLength) {
       return NextResponse.json(
         { error: `Prompt is too long. Maximum ${settings.maxPromptLength} characters.` },
+        { status: 400 },
+      );
+    }
+    if (negativePrompt && negativePrompt.length > MAX_NEGATIVE_PROMPT_CHARS) {
+      return NextResponse.json(
+        { error: `Negative prompt is too long. Maximum ${MAX_NEGATIVE_PROMPT_CHARS} characters.` },
         { status: 400 },
       );
     }
@@ -354,6 +364,10 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
+
+    const concurrency = await acquirePublicAiConcurrency(req, 'image', guard.userId);
+    if (!concurrency.ok) return concurrency.response;
+    releaseConcurrency = concurrency.release;
 
     const requestedEngine: ImageEngine = ['auto', 'imagen', 'openai', 'dalle', 'stability', 'flux'].includes(rawEngine)
       ? (rawEngine as ImageEngine)
@@ -466,6 +480,16 @@ export async function POST(req: NextRequest) {
     attempts += 1;
     return await finish(generateWithPollinations(enhancedPrompt, aspectRatio));
   } catch (error) {
+    if (error instanceof RequestBodyTooLargeError) {
+      return NextResponse.json(
+        { error: `Image request is too large. Keep the JSON body under ${MAX_IMAGE_REQUEST_BYTES.toLocaleString()} bytes.` },
+        { status: 413 },
+      );
+    }
+    if (error instanceof SyntaxError) {
+      return NextResponse.json({ error: 'Image request contains invalid JSON.' }, { status: 400 });
+    }
+
     logger.error('Image generation API error.', error);
     await recordImageUsage({
       provider: 'unknown',
@@ -481,5 +505,7 @@ export async function POST(req: NextRequest) {
       { error: error instanceof Error ? error.message : 'Failed to generate image. Please try again.' },
       { status: 500 },
     );
+  } finally {
+    if (releaseConcurrency) await releaseConcurrency();
   }
 }
