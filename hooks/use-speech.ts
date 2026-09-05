@@ -26,7 +26,7 @@ function speechRecognitionErrorMessage(error: string) {
 
 export function useSpeechToText(onTranscript: (text: string) => void) {
   const [isListening, setIsListening] = useState(false);
-  const [isSupported, setIsSupported] = useState(false);
+  const [isSupported] = useState(() => Boolean(getSpeechRecognitionConstructor()));
   const [interimTranscript, setInterimTranscript] = useState('');
   const [error, setError] = useState<string | null>(null);
   const recognitionRef = useRef<any>(null);
@@ -38,7 +38,6 @@ export function useSpeechToText(onTranscript: (text: string) => void) {
 
   useEffect(() => {
     const SpeechRecognition = getSpeechRecognitionConstructor();
-    setIsSupported(Boolean(SpeechRecognition));
     if (!SpeechRecognition) return;
 
     const recognition = new SpeechRecognition();
@@ -141,11 +140,10 @@ export function useSpeechToText(onTranscript: (text: string) => void) {
 
 export function useTextToSpeech() {
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
-  const [isSupported, setIsSupported] = useState(false);
+  const [isSupported] = useState(() => typeof window !== 'undefined' && 'speechSynthesis' in window);
   const activeMessageRef = useRef<string | null>(null);
 
   useEffect(() => {
-    setIsSupported(typeof window !== 'undefined' && 'speechSynthesis' in window);
     return () => {
       if (typeof window !== 'undefined' && window.speechSynthesis) {
         window.speechSynthesis.cancel();
