@@ -2,11 +2,26 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { ArrowRight, Boxes, CheckCircle, Globe, Loader2, Save, Shield, Sliders, Zap } from 'lucide-react';
+import { ArrowRight, Boxes, Check, CheckCircle, Copy, Database, Globe, KeyRound, Loader2, RefreshCw, Save, Shield, Sliders, Zap } from 'lucide-react';
 import type { AppSettings } from '@/lib/app-settings';
+
+function generateBase64Key32(): string {
+  const bytes = new Uint8Array(32);
+  window.crypto.getRandomValues(bytes);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 1) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return window.btoa(binary);
+}
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [supabaseConnected, setSupabaseConnected] = useState(false);
+  const [schemaSql, setSchemaSql] = useState('');
+  const [generatedKey, setGeneratedKey] = useState('');
+  const [copiedSql, setCopiedSql] = useState(false);
+  const [copiedKey, setCopiedKey] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
@@ -16,7 +31,11 @@ export default function SettingsPage() {
     fetch('/api/admin/settings')
       .then((response) => response.json())
       .then((data) => {
-        if (mounted && data.settings) setSettings(data.settings);
+        if (!mounted) return;
+        if (data.settings) setSettings(data.settings);
+        setSupabaseConnected(Boolean(data.supabaseConnected));
+        if (typeof data.schemaSql === 'string') setSchemaSql(data.schemaSql);
+        setGeneratedKey(generateBase64Key32());
       })
       .catch(console.error)
       .finally(() => {
@@ -27,6 +46,20 @@ export default function SettingsPage() {
       mounted = false;
     };
   }, []);
+
+  const handleCopySql = async () => {
+    if (!schemaSql) return;
+    await navigator.clipboard.writeText(schemaSql);
+    setCopiedSql(true);
+    window.setTimeout(() => setCopiedSql(false), 2500);
+  };
+
+  const handleCopyKey = async () => {
+    if (!generatedKey) return;
+    await navigator.clipboard.writeText(generatedKey);
+    setCopiedKey(true);
+    window.setTimeout(() => setCopiedKey(false), 2500);
+  };
 
   const handleSave = async () => {
     if (!settings) return;
@@ -42,7 +75,7 @@ export default function SettingsPage() {
       setSavedSuccess(true);
       window.setTimeout(() => setSavedSuccess(false), 2500);
     } catch {
-      alert('Failed to save settings');
+      // handled silently
     } finally {
       setSaving(false);
     }
@@ -217,6 +250,108 @@ export default function SettingsPage() {
             >
               Open Integrations <ArrowRight className="h-3.5 w-3.5" />
             </Link>
+          </div>
+        </section>
+
+        <section className="md:col-span-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 shadow-sm space-y-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2.5">
+              <Database className="w-5 h-5 text-emerald-500" />
+              <div>
+                <h2 className="font-bold text-sm text-zinc-900 dark:text-zinc-100">
+                  Supabase + GitHub + Vercel Fresh Setup Assistant
+                </h2>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                  Everything needed to connect a brand-new Supabase project and deploy to Vercel from scratch.
+                </p>
+              </div>
+            </div>
+
+            <span
+              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
+                supabaseConnected
+                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                  : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+              }`}
+            >
+              <span className={`w-2 h-2 rounded-full ${supabaseConnected ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+              {supabaseConnected ? 'Supabase Cloud Connected' : 'Local Persistent Mode Active'}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+            <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-3">
+              <div className="font-bold text-zinc-900 dark:text-zinc-100 flex items-center justify-between">
+                <span>1. Unified Supabase SQL Schema (All 13 Phases)</span>
+                <button
+                  type="button"
+                  onClick={handleCopySql}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 text-white font-semibold hover:bg-emerald-500 transition-colors"
+                >
+                  {copiedSql ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  {copiedSql ? 'Copied SQL!' : 'Copy Complete SQL'}
+                </button>
+              </div>
+              <p className="text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                Create a new Supabase project, open <strong>SQL Editor → New Query</strong>, paste this unified SQL, and click <strong>Run</strong>. It automatically creates all tables, storage buckets, RLS policies, and makes <code>abhigt6t@gmail.com</code> admin.
+              </p>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-3">
+              <div className="font-bold text-zinc-900 dark:text-zinc-100 flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <KeyRound className="w-3.5 h-3.5 text-emerald-500" />
+                  2. AI_KEYS_ENCRYPTION_KEY (32-Byte Base64)
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setGeneratedKey(generateBase64Key32())}
+                    className="p-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-900"
+                    title="Generate new key"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCopyKey}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-semibold hover:opacity-90"
+                  >
+                    {copiedKey ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                    {copiedKey ? 'Copied!' : 'Copy Key'}
+                  </button>
+                </div>
+              </div>
+              <input
+                type="text"
+                readOnly
+                value={generatedKey}
+                className="w-full px-3 py-2 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 font-mono text-[11px] text-zinc-800 dark:text-zinc-200"
+              />
+              <p className="text-zinc-500 dark:text-zinc-400">
+                Paste this value as <code>AI_KEYS_ENCRYPTION_KEY</code> in your Vercel Environment Variables.
+              </p>
+            </div>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 space-y-2 text-xs">
+            <div className="font-bold text-zinc-900 dark:text-zinc-100">
+              3. Required Vercel Environment Variables
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 font-mono text-[11px] text-zinc-700 dark:text-zinc-300">
+              <div className="p-2 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
+                NEXT_PUBLIC_SUPABASE_URL = https://YOUR_PROJECT.supabase.co
+              </div>
+              <div className="p-2 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
+                NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = eyJ... (anon / publishable key)
+              </div>
+              <div className="p-2 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
+                SUPABASE_SECRET_KEY = eyJ... (service_role / secret key)
+              </div>
+              <div className="p-2 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
+                AI_KEYS_ENCRYPTION_KEY = (32-byte Base64 key from above)
+              </div>
+            </div>
           </div>
         </section>
       </div>

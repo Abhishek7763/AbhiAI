@@ -1,11 +1,11 @@
 export const ADMIN_SESSION_COOKIE = 'abhiai_admin_session';
 
-export const DEFAULT_ADMIN_EMAIL = 'abhigt6t@gmail.com';
+export const DEFAULT_ADMIN_EMAIL = 'abhishekbhardwaj7763@gmail.com';
 export const DEFAULT_ADMIN_PASSWORD = 'admin123';
 
 const ALLOWED_ADMIN_EMAILS = new Set([
-  'abhigt6t@gmail.com',
   'abhishekbhardwaj7763@gmail.com',
+  'abhigt6t@gmail.com',
   'admin@abhiai.com',
 ]);
 

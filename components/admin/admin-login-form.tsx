@@ -32,7 +32,7 @@ export default function AdminLoginForm() {
             type="email"
             required
             autoComplete="email"
-            defaultValue="abhigt6t@gmail.com"
+            defaultValue="abhishekbhardwaj7763@gmail.com"
             placeholder="admin@example.com"
             className="w-full bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-800 rounded-xl px-4 py-2.5 text-sm outline-none text-zinc-950 dark:text-zinc-100 focus:ring-2 focus:ring-blue-500/60 transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600"
           />
