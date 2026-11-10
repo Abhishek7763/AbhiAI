@@ -1,0 +1,312 @@
+{
+  "admin_users": [
+    {
+      "id": "local-admin-owner",
+      "email": "abhigt6t@gmail.com",
+      "created_at": "2026-11-10T00:04:09.798Z"
+    },
+    {
+      "id": "local-admin-abhishek",
+      "email": "abhishekbhardwaj7763@gmail.com",
+      "created_at": "2026-11-10T00:04:09.798Z"
+    }
+  ],
+  "app_settings": [
+    {
+      "key": "general",
+      "value": {
+        "appName": "AbhiAI",
+        "creatorName": "Abhishek",
+        "freeOnlyMode": true,
+        "rateLimitRPM": 30,
+        "maxDailyRequestsPerIP": 200,
+        "maxPromptLength": 4000,
+        "enablePublicAI": true,
+        "enablePWA": true,
+        "defaultPublicAlias": "abhiai-fast",
+        "defaultPrivateModel": "",
+        "supportEmail": "abhishekbhardwaj7763@gmail.com",
+        "geminiApiKey": "",
+        "openaiApiKey": "",
+        "stabilityApiKey": "",
+        "openrouterApiKey": "",
+        "groqApiKey": "",
+        "togetherApiKey": "",
+        "customImageApiEndpoint": "",
+        "lastUpdated": "2026-11-10T00:04:09.750Z"
+      },
+      "description": "AbhiAI application settings."
+    },
+    {
+      "key": "routing",
+      "value": {
+        "strategy": "smart-auto",
+        "preferredModelRecordId": "model-gemini-2-5-flash",
+        "poolModelRecordIds": [
+          "model-gemini-2-5-flash",
+          "model-gemini-2-5-pro"
+        ],
+        "strictPool": false,
+        "failoverEnabled": true,
+        "maxAttempts": 4,
+        "providerTimeoutMs": 35000
+      },
+      "description": "AbhiAI Smart Auto pool."
+    },
+    {
+      "key": "public_aliases",
+      "value": [
+        {
+          "id": "abhiai-fast",
+          "displayName": "AbhiAI Fast (Quick queries)",
+          "modelRecordId": "model-gemini-2-5-flash",
+          "enabled": true
+        },
+        {
+          "id": "abhiai-think",
+          "displayName": "AbhiAI Think (Deep reasoning)",
+          "modelRecordId": "model-gemini-2-5-pro",
+          "enabled": true
+        },
+        {
+          "id": "abhiai-code",
+          "displayName": "AbhiAI Code (Software engineering)",
+          "modelRecordId": "model-gemini-2-5-flash",
+          "enabled": true
+        },
+        {
+          "id": "abhiai-vision",
+          "displayName": "AbhiAI Vision (Multimodal analysis)",
+          "modelRecordId": "model-gemini-2-5-flash",
+          "enabled": true
+        },
+        {
+          "id": "abhiai-creative",
+          "displayName": "AbhiAI Creative (Writing & ideas)",
+          "modelRecordId": "model-gemini-2-5-flash",
+          "enabled": true
+        }
+      ],
+      "description": "Public AbhiAI aliases mapped to backend model records."
+    }
+  ],
+  "system_instructions": [
+    {
+      "id": "global",
+      "system_prompt": "You are AbhiAI, a helpful, accurate, and thoughtful AI assistant created by Abhishek. Provide clear, well-structured responses.",
+      "updated_at": "2026-11-10T00:04:09.798Z"
+    },
+    {
+      "id": "public",
+      "system_prompt": "Keep answers concise, accurate, and friendly for public visitors.",
+      "updated_at": "2026-11-10T00:04:09.798Z"
+    },
+    {
+      "id": "admin",
+      "system_prompt": "Provide deep technical detail and full diagnostics for admin sessions.",
+      "updated_at": "2026-11-10T00:04:09.798Z"
+    }
+  ],
+  "instruction_revisions": [],
+  "ai_agents": [
+    {
+      "id": "agent-study",
+      "name": "AbhiAI Study Buddy",
+      "description": "Simplifies complex subjects, quizzes knowledge, and explains concepts step-by-step.",
+      "icon": "book-open",
+      "system_prompt": "You are AbhiAI Study Buddy, a warm and encouraging educational mentor created by Abhishek.\nYour goal is to help students learn deeply by:\n1. Breaking down difficult topics into intuitive, easy-to-understand analogies.\n2. Asking interactive follow-up questions to test comprehension.\n3. Providing clear summaries and key takeaways.",
+      "preferred_model_alias": "abhiai-think",
+      "model_pool": [
+        "abhiai-think",
+        "abhiai-fast"
+      ],
+      "fallback_model_alias": null,
+      "required_capabilities": [
+        "text",
+        "reasoning"
+      ],
+      "allowed_tools": [
+        "web_search",
+        "document_qa"
+      ],
+      "visibility": "public",
+      "temperature": 0.5,
+      "memory_enabled": true,
+      "max_tokens": 4096,
+      "sample_starters": [
+        "Explain Quantum Computing using simple everyday analogies",
+        "Quiz me on World War II history with 3 multiple-choice questions",
+        "Summarize the core concepts of photosynthesis"
+      ],
+      "created_at": "2026-11-10T00:04:09.749Z"
+    },
+    {
+      "id": "agent-code",
+      "name": "AbhiAI Code Architect",
+      "description": "Writes production-ready TypeScript, Python, bug diagnoses, and system architecture.",
+      "icon": "code-2",
+      "system_prompt": "You are AbhiAI Code Architect, an elite software engineering assistant created by Abhishek.\nFollow strict clean code principles:\n- Provide clean, robust, and well-commented code snippets.\n- Identify edge cases, performance bottlenecks, and security vulnerabilities.\n- Explain trade-offs between architectural choices.",
+      "preferred_model_alias": "abhiai-code",
+      "model_pool": [
+        "abhiai-code",
+        "abhiai-think"
+      ],
+      "fallback_model_alias": null,
+      "required_capabilities": [
+        "text",
+        "coding"
+      ],
+      "allowed_tools": [
+        "web_search",
+        "document_qa"
+      ],
+      "visibility": "public",
+      "temperature": 0.2,
+      "memory_enabled": true,
+      "max_tokens": 4096,
+      "sample_starters": [
+        "Write a high-performance LRU cache in TypeScript with O(1) ops",
+        "Review this SQL query and suggest index optimizations",
+        "Help me design a resilient webhook processing pipeline"
+      ],
+      "created_at": "2026-11-10T00:04:09.749Z"
+    },
+    {
+      "id": "agent-research",
+      "name": "AbhiAI Deep Researcher",
+      "description": "Thorough, multi-perspective synthesis of complex academic and business topics.",
+      "icon": "search",
+      "system_prompt": "You are AbhiAI Deep Researcher, a rigorous analytical research assistant created by Abhishek.\nProvide comprehensive, structured analyses with:\n- Executive summaries\n- Detailed comparative pros/cons tables\n- Critical counter-arguments and future outlook.",
+      "preferred_model_alias": "abhiai-think",
+      "model_pool": [
+        "abhiai-think",
+        "abhiai-fast"
+      ],
+      "fallback_model_alias": null,
+      "required_capabilities": [
+        "text",
+        "reasoning"
+      ],
+      "allowed_tools": [
+        "web_search",
+        "document_qa"
+      ],
+      "visibility": "public",
+      "temperature": 0.4,
+      "memory_enabled": true,
+      "max_tokens": 6144,
+      "sample_starters": [
+        "Synthesize current breakthroughs in solid-state battery technology",
+        "Compare microservices vs modular monoliths for early-stage startups",
+        "Analyze the economic impacts of AI agent automation in finance"
+      ],
+      "created_at": "2026-11-10T00:04:09.749Z"
+    },
+    {
+      "id": "agent-writer",
+      "name": "AbhiAI Copy & Content Strategist",
+      "description": "High-converting copywriting, persuasive essays, scripts, and editorial refinement.",
+      "icon": "pen-tool",
+      "system_prompt": "You are AbhiAI Copy & Content Strategist, a master wordsmith and creative director created by Abhishek.\nCraft captivating, high-impact prose tailored to the requested audience with compelling hooks and concise phrasing.",
+      "preferred_model_alias": "abhiai-creative",
+      "model_pool": [
+        "abhiai-creative",
+        "abhiai-fast"
+      ],
+      "fallback_model_alias": null,
+      "required_capabilities": [
+        "text"
+      ],
+      "allowed_tools": [
+        "web_search",
+        "document_qa",
+        "image_generation"
+      ],
+      "visibility": "public",
+      "temperature": 0.8,
+      "memory_enabled": true,
+      "max_tokens": 4096,
+      "sample_starters": [
+        "Write a compelling product launch email sequence for a new SaaS",
+        "Draft a high-engagement LinkedIn thought leadership post",
+        "Create a cinematic hero image concept for a product launch"
+      ],
+      "created_at": "2026-11-10T00:04:09.749Z"
+    }
+  ],
+  "ai_providers": [
+    {
+      "id": "provider-google-default",
+      "slug": "google",
+      "name": "Google Gemini",
+      "base_url": "https://generativelanguage.googleapis.com",
+      "adapter_type": "google",
+      "is_active": true,
+      "priority": 1,
+      "created_at": "2026-11-10T00:04:09.798Z"
+    }
+  ],
+  "ai_api_keys": [
+    {
+      "id": "key-google-default",
+      "provider_id": "provider-google-default",
+      "label": "Google Gemini key",
+      "encrypted_key": "kZSYMuKz/FEcPOHMaaQvEbr2lrxhckJiX5ovRLnmSQDfJFAQCIw2XcnrCgoYT9bXoxCXtHM=",
+      "encryption_iv": "Sj5EtM8TPGVZEI7l",
+      "encryption_tag": "g1uW6IZSPaBCq5Nz132/Wg==",
+      "encryption_version": 1,
+      "key_fingerprint": "107e93a682b92d65bdffd12356c2166875c4a31f79aedec2908e0419b20cd933",
+      "masked_key": "AQ.A••••kX7A",
+      "status": "active",
+      "priority": 1,
+      "created_at": "2026-11-10T00:04:09.798Z"
+    }
+  ],
+  "ai_models": [
+    {
+      "id": "model-gemini-2-5-flash",
+      "provider_id": "provider-google-default",
+      "model_id": "gemini-2.5-flash",
+      "name": "Google Gemini - Gemini 2.5 Flash",
+      "alias": "AbhiAI Fast",
+      "capabilities": [
+        "text",
+        "vision",
+        "reasoning",
+        "fast",
+        "coding"
+      ],
+      "is_active": true,
+      "is_public": true,
+      "is_free": true,
+      "priority": 1,
+      "limits": {},
+      "input_cost_per_million": 0,
+      "output_cost_per_million": 0,
+      "created_at": "2026-11-10T00:04:09.798Z"
+    },
+    {
+      "id": "model-gemini-2-5-pro",
+      "provider_id": "provider-google-default",
+      "model_id": "gemini-2.5-pro",
+      "name": "Google Gemini - Gemini 2.5 Pro",
+      "alias": "AbhiAI Reasoning",
+      "capabilities": [
+        "text",
+        "vision",
+        "reasoning",
+        "coding"
+      ],
+      "is_active": true,
+      "is_public": true,
+      "is_free": true,
+      "priority": 2,
+      "limits": {},
+      "input_cost_per_million": 0,
+      "output_cost_per_million": 0,
+      "created_at": "2026-11-10T00:04:09.798Z"
+    }
+  ],
+  "usage_events": [],
+  "ops_alerts": []
+}
